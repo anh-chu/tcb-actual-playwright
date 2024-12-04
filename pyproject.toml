@@ -1,0 +1,20 @@
+[project]
+name = "techcombank-auto"
+version = "0.1.0"
+description = "Default template for PDM package"
+authors = [
+    {name = "Anh Chu", email = "chuducanh.atred@gmail.com"},
+]
+dependencies = ["playwright>=1.49.0", "fastnumbers>=5.1.0"]
+requires-python = "==3.10.*"
+readme = "README.md"
+license = {text = "MIT"}
+
+
+[tool.pdm]
+distribution = false
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.0.1",
+]

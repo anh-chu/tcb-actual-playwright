@@ -1,0 +1,23 @@
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+  # export python requirements
+  - repo: https://github.com/pdm-project/pdm
+    rev: 2.21.0 # a PDM release exposing the hook
+    hooks:
+      - id: pdm-export
+        # command arguments, e.g.:
+        args: ['-o', 'requirements.txt', '--without-hashes', '--prod']
+        files: ^pdm.lock$
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+    -   id: check-yaml
+    -   id: end-of-file-fixer
+    -   id: trailing-whitespace
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+    -   id: black
