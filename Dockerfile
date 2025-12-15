@@ -22,6 +22,8 @@ EXPOSE 5900
 CMD bash -c "\
     Xvfb :99 -screen 0 1920x1080x24 & \
     fluxbox & \
-    x11vnc -display :99 -nopw -forever -shared -rfbport 5900 & \
+    until xdpyinfo -display :99 >/dev/null 2>&1; do sleep 0.2; done; \
+    x11vnc -display :99 -nopw -forever -shared -rfbport 5900 -noxdamage & \
     python main.py \
 "
+

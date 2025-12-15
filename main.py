@@ -91,9 +91,18 @@ def save_data(data: str):
 
 
 def run(playwright: Playwright) -> None:
-    browser = playwright.chromium.launch()
+    browser = playwright.chromium.launch(
+        headless=False,
+        args=[
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--window-size=1280,800",
+        ],
+    )
     context = browser.new_context(
-        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0"
+        viewport={"width": 1280, "height": 800},
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0",
     )
 
     page = login(context)
