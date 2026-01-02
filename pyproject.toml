@@ -5,7 +5,14 @@ description = "Default template for PDM package"
 authors = [
     {name = "Anh Chu", email = "chuducanh.atred@gmail.com"},
 ]
-dependencies = ["playwright>=1.49.0", "fastnumbers>=5.1.0"]
+dependencies = [
+    "playwright>=1.49.0",
+    "fastnumbers>=5.1.0",
+    "fastapi>=0.111.0",
+    "uvicorn>=0.30.0",
+    "websockify>=0.11.0",
+    "supervisor>=4.2.5",
+]
 requires-python = "==3.10.*"
 readme = "README.md"
 license = {text = "MIT"}

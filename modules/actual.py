@@ -42,9 +42,12 @@ def init_actual():
             # Return the token
             return res["token"]
 
+
+
     except urllib.error.URLError as e:
         # Handle any network-related errors
-        print(f"Error occurred: {e}")
+        from .logger import logger
+        logger.error(f"Error occurred: {e}")
         return None
 
 
@@ -80,5 +83,7 @@ def import_transactions(token, account_id, transactions):
 
     except urllib.error.URLError as e:
         # Handle any network-related errors
-        print(f"Error occurred: {e}")
+
+        from .logger import logger
+        logger.error(f"Error occurred: {e}")
         return None

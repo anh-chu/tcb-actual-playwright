@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 
 _fmt_file_debug = "[ %(asctime)s ] [ DBUG ] (%(name)s) %(message)s"
 _fmt_file_info = "[ %(asctime)s ] [ INFO ] (%(name)s) %(message)s"
@@ -74,7 +75,7 @@ class Logger(logging.Logger):
         self,
         name: str,
         level: int = logging.INFO,
-        file: str | None = None,
+        file: Optional[str] = None,
         time: bool = True,
     ):
         self._file = file
