@@ -1,0 +1,21 @@
+from sqlmodel import SQLModel, create_engine, Session
+
+import os
+
+# Use a local SQLite database
+# We store it in a 'data' subdirectory so users can mount a volume there easily
+if not os.path.exists("data"):
+    os.makedirs("data")
+
+sqlite_file_name = "data/database.db"
+sqlite_url = f"sqlite:///{sqlite_file_name}"
+
+connect_args = {"check_same_thread": False}
+engine = create_engine(sqlite_url, echo=True, connect_args=connect_args)
+
+def create_db_and_tables():
+    SQLModel.metadata.create_all(engine)
+
+def get_session():
+    with Session(engine) as session:
+        yield session

@@ -1,22 +1,17 @@
 import urllib.request
 import json
 
-from .config import (
-    ACTUAL_URL,
-    ACTUAL_PASSWORD,
-    ACTUAL_BUDGET_ID,
-    ACTUAL_BUDGET_PASSWORD,
-)
 
 
-def init_actual():
-    url = f"{ACTUAL_URL}/api/init"
+
+def init_actual(config: dict):
+    url = f"{config['url']}/api/init"
 
     # Prepare the request body
     body = {
-        "password": ACTUAL_PASSWORD,
-        "budgetId": ACTUAL_BUDGET_ID,
-        "budgetPassword": ACTUAL_BUDGET_PASSWORD,
+        "password": config['password'],
+        "budgetId": config['budget_id'],
+        "budgetPassword": config.get('budget_password'),
     }
 
     # Convert body to JSON string
@@ -51,8 +46,8 @@ def init_actual():
         return None
 
 
-def import_transactions(token, account_id, transactions):
-    url = f"{ACTUAL_URL}/api/importTransactions?paramsInBody=true"
+def import_transactions(token, account_id, transactions, actual_url):
+    url = f"{actual_url}/api/importTransactions?paramsInBody=true"
 
     # Prepare the request body
     body = {"_": [account_id, transactions]}

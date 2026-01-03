@@ -7,13 +7,16 @@ from operator import itemgetter
 from functools import reduce
 
 from .exchange_rate import get_exchange_rate
-from .config import ARRANGEMENTS
 
 
-def convert_to_actual_transaction(transaction: Dict):
-    global ARRANGEMENTS
 
-    account_id = ARRANGEMENTS[transaction["arrangementId"]]
+def convert_to_actual_transaction(transaction: Dict, mapping: Dict):
+    if not mapping:
+        return None
+
+    # Find account ID from arrangement ID
+    # mapping is {arrangementId: accountId}
+    account_id = mapping.get(transaction["arrangementId"])
 
     if not account_id:
         return
@@ -48,8 +51,12 @@ def convert_to_actual_transaction(transaction: Dict):
     return out
 
 
-def convert_to_actual_import(transactions: List[Dict]):
-    a = list(filter(lambda x: x, map(convert_to_actual_transaction, transactions)))
+def convert_to_actual_import(transactions: List[Dict], mapping: Dict):
+    # Pass mapping to inner function
+    a = list(filter(lambda x: x, [convert_to_actual_transaction(t, mapping) for t in transactions]))
+    if not a:
+        return {}
+        
     a = sorted(a, key=itemgetter("account"))
 
     converted = {
