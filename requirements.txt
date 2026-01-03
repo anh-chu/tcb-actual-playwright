@@ -1,5 +1,11 @@
 playwright>=1.49.0
-fastnumbers>=5.1.0
-fastapi>=0.111.0
-uvicorn>=0.30.0
+fastnumbers
+fastapi
+uvicorn
 websockify>=0.11.0
+supervisor
+sqlmodel
+passlib[argon2]
+python-jose[cryptography]
+cryptography
+python-multipart

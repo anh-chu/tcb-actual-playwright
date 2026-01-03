@@ -1,148 +1,192 @@
 :root {
-  --bg-color: #0f172a;
-  --card-bg: #1e293b;
-  --primary: #3b82f6;
-  --primary-hover: #2563eb;
-  --text-main: #f8fafc;
-  --text-muted: #94a3b8;
-  --success: #10b981;
+  --primary: #646cff;
+  --primary-hover: #535bf2;
+  --bg-dark: #1a1a1a;
+  --bg-card: #2a2a2a;
+  --text-main: #ffffff;
+  --text-muted: #rgba(255, 255, 255, 0.7);
+  --border-color: #444;
+  --success: #22c55e;
   --error: #ef4444;
-  --warning: #f59e0b;
+  --warning: #eab308;
 }
 
 body {
   margin: 0;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background-color: var(--bg-color);
-  color: var(--text-main);
-  display: flex;
-  justify-content: center;
+  min-width: 320px;
   min-height: 100vh;
+  background-color: var(--bg-dark);
+  color: var(--text-main);
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  /* Modern background mesh/gradient */
+  background-image:
+    radial-gradient(at 0% 0%, hsla(253, 16%, 7%, 1) 0, transparent 50%),
+    radial-gradient(at 50% 0%, hsla(225, 39%, 30%, 1) 0, transparent 50%),
+    radial-gradient(at 100% 0%, hsla(339, 49%, 30%, 1) 0, transparent 50%);
+  background-attachment: fixed;
 }
 
-#root {
+h1,
+h2,
+h3 {
+  font-weight: 600;
+  line-height: 1.1;
+  margin-bottom: 1rem;
+}
+
+button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  background-color: var(--primary);
+  cursor: pointer;
+  transition: all 0.25s;
+  color: white;
+}
+
+button:hover {
+  background-color: var(--primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+button:disabled {
+  background-color: #555;
+  cursor: not-allowed;
+  transform: none;
+}
+
+input,
+textarea {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 0.75rem;
+  font-size: 1rem;
+  color: white;
+  transition: border-color 0.2s;
   width: 100%;
-  max-width: 1280px;
-  padding: 2rem;
   box-sizing: border-box;
 }
 
-.container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2rem;
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  background: rgba(0, 0, 0, 0.4);
 }
 
-/* Glassmorphism Card */
 .card {
-  background: rgba(30, 41, 59, 0.7);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
   padding: 2rem;
-  width: 100%;
-  max-width: 600px;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  transition: transform 0.2s;
+  background-color: rgba(40, 40, 40, 0.7);
+  border-radius: 16px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-}
-
-h1 {
-  font-size: 2.5rem;
-  font-weight: 800;
-  margin: 0;
-  background: linear-gradient(to right, #60a5fa, #a78bfa);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
 }
 
 .status-badge {
   display: inline-block;
   padding: 0.5rem 1rem;
   border-radius: 9999px;
-  font-weight: 600;
-  font-size: 0.875rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-top: 1rem;
-}
-
-.status-idle { background: var(--card-bg); color: var(--text-muted); border: 1px solid var(--text-muted); }
-.status-starting { background: var(--primary); color: white; }
-.status-logging_in { background: var(--primary); color: white; animation: pulse 2s infinite; }
-.status-waiting_otp { background: var(--warning); color: black; animation: bounce 1s infinite; }
-.status-fetching_data { background: #8b5cf6; color: white; }
-.status-saving_data { background: #8b5cf6; color: white; }
-.status-success { background: var(--success); color: white; }
-.status-error { background: var(--error); color: white; }
-
-.btn {
-  background: var(--primary);
-  color: white;
-  border: none;
-  padding: 0.75rem 1.5rem;
-  border-radius: 8px;
-  font-weight: 600;
-  cursor: pointer;
-  font-size: 1rem;
-  transition: background 0.2s;
-  width: 100%;
-  margin-top: 1.5rem;
-}
-
-.btn:hover {
-  background: var(--primary-hover);
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn-stop {
-  background: var(--error);
-  margin-top: 1rem;
-}
-.btn-stop:hover {
-  background: #dc2626;
-}
-
-.vnc-container {
-  width: 100%;
-  height: 600px;
-  border-radius: 12px;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  margin-top: 2rem;
-}
-
-iframe {
-  width: 100%;
-  height: 100%;
-  border: none;
-}
-
-pre {
-  background: rgba(0,0,0,0.3);
-  padding: 1rem;
-  border-radius: 8px;
-  overflow-x: auto;
-  color: var(--error);
-  font-family: monospace;
+  font-weight: bold;
   font-size: 0.9rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.status-idle {
+  background: #334155;
+  color: #94a3b8;
+}
+
+.status-starting {
+  background: #4f46e5;
+  color: white;
+  animation: pulse 2s infinite;
+}
+
+.status-logging_in {
+  background: #2563eb;
+  color: white;
+  animation: pulse 2s infinite;
+}
+
+.status-waiting_otp {
+  background: var(--warning);
+  color: black;
+  animation: bounce 1s infinite;
+}
+
+.status-fetching_data {
+  background: #0891b2;
+  color: white;
+  animation: pulse 2s infinite;
+}
+
+.status-saving_data {
+  background: #7c3aed;
+  color: white;
+  animation: pulse 2s infinite;
+}
+
+.status-success {
+  background: var(--success);
+  color: white;
+}
+
+.status-error {
+  background: var(--error);
+  color: white;
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
+  0% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.7;
+  }
+
+  100% {
+    opacity: 1;
+  }
 }
 
 @keyframes bounce {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-5px); }
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+  color: #ccc;
+  text-align: left;
+}
+
+.form-group {
+  margin-bottom: 1.5rem;
 }
