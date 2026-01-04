@@ -181,9 +181,10 @@ class BankingService:
             
             # Start a listener for the transactions request
             # We look for a JSON response containing transaction data
+            
             async with self._page.expect_response(
-                lambda response: "transactions" in response.url and response.status == 200,
-                timeout=30000
+                lambda response: "transaction" in response.url and response.status == 200,
+                timeout=30000 
             ) as response_info:
                 
                 # Trigger the request by clicking the first account card/item on the dashboard.
@@ -197,27 +198,39 @@ class BankingService:
                     "div[class*='account-card']",
                     ".list-account-item",
                     "text=Xem chi tiết", # Vietnamese "View details"
-                    "text=View details"
+                    "text=View details",
+                    "text=Tài khoản thanh toán", # From screenshot
+                    "text=Xem tất cả" # View All
                 ]
                 
                 clicked = False
+                
+                # Wait for at least one useful element to appear to ensure dashboard is loaded
+                try:
+                    logger.info("Waiting for dashboard elements...")
+                    await self._page.wait_for_selector("text=Tài khoản thanh toán", timeout=10000)
+                except:
+                    logger.warning("Timeout waiting for 'Tài khoản thanh toán', trying other selectors...")
+
                 for sel in selectors:
                     try:
-                        if await self._page.locator(sel).first.is_visible():
-                            await self._page.locator(sel).first.click()
+                        # Use a small timeout for each check instead of instant fail
+                        loc = self._page.locator(sel).first
+                        if await loc.is_visible():
+                            logger.info(f"Found selector: {sel}")
+                            await loc.click()
                             clicked = True
                             break
                     except:
                         continue
                 
                 if not clicked:
-                    # Fallback: try to navigate directly if we can't click? 
-                    # But we don't know the arrangement ID easily.
-                    # Just click the body as a desperate measure? No.
+                    # Fallback
                     logger.warning("Could not find account selector, trying to blindly wait for background requests...")
             
             # Get response
             response = await response_info.value
+            logger.info(f"Captured transaction response from: {response.url}")
             body = await response.text()
             logger.info(f"Captured response of size: {len(body)}")
             
@@ -229,11 +242,42 @@ class BankingService:
             self._set_status(AppStatus.ERROR)
             raise e
 
+        except Exception as e:
+            logger.error(f"Fetch flow failed: {e}")
+            self._last_error = str(e)
+            self._set_status(AppStatus.ERROR)
+            raise e
+
     async def _process_save(self, data_str: str):
          self._set_status(AppStatus.SAVING_DATA)
          data_json = json.loads(data_str)
          
-         logger.info("Converting data...")
+         logger.info(f"Data type: {type(data_json)}")
+         transactions_list = []
+         
+         if isinstance(data_json, list):
+             transactions_list = data_json
+         elif isinstance(data_json, dict):
+             logger.info(f"Response keys: {list(data_json.keys())}")
+             # heuristics to find the list
+             if "transactions" in data_json:
+                 transactions_list = data_json["transactions"]
+             elif "value" in data_json and isinstance(data_json["value"], list):
+                 transactions_list = data_json["value"]
+             elif "value" in data_json and isinstance(data_json["value"], dict) and "transactions" in data_json["value"]:
+                 transactions_list = data_json["value"]["transactions"]
+             elif "data" in data_json and isinstance(data_json["data"], list):
+                 transactions_list = data_json["data"]
+         
+         if not transactions_list:
+              logger.warning("Could not find a list of transactions in the response!")
+              # We might continue to extract empty, or fail. 
+              # For now, let's pass what we have if it's a list, otherwise empty.
+              if not isinstance(transactions_list, list):
+                  transactions_list = []
+
+         logger.info(f"Converting {len(transactions_list)} transactions...")
+         
          # Make sure convert module uses the mapping passed in config
          # We need to temporarily patch or pass mapping to convert function
          # For now, let's assume convert module is modified or we do it here.
@@ -243,7 +287,7 @@ class BankingService:
          
          # Assuming convert_module.convert_to_actual_import accepts (data, mapping)
          # If not, let's update it in next step. For now, calling with expected signature correction.
-         converted = convert.convert_to_actual_import(data_json, self._config.get("accounts_mapping", {}))
+         converted = convert.convert_to_actual_import(transactions_list, self._config.get("accounts_mapping", {}))
          
          logger.info("Fetching Actual's token...")
          loop = asyncio.get_event_loop()
