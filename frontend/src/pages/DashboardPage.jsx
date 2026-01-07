@@ -13,6 +13,19 @@ function DashboardPage() {
     const { logout, user } = useAuth()
     const navigate = useNavigate()
 
+    // Date range state (default to last 30 days)
+    const getDefaultDates = () => {
+        const today = new Date()
+        const monthAgo = new Date()
+        monthAgo.setDate(monthAgo.getDate() - 30)
+        return {
+            from: monthAgo.toISOString().split('T')[0],
+            to: today.toISOString().split('T')[0]
+        }
+    }
+
+    const [dateRange, setDateRange] = useState(getDefaultDates())
+
     // Polling for status
     useEffect(() => {
         const fetchStatus = async () => {
@@ -33,7 +46,10 @@ function DashboardPage() {
 
     const handleStart = async () => {
         try {
-            await axios.post('/api/sync/start')
+            await axios.post('/api/sync/start', {
+                date_from: dateRange.from,
+                date_to: dateRange.to
+            })
         } catch (e) {
             if (e.response && e.response.status === 400 && e.response.data.detail.includes("Settings not configured")) {
                 alert("Please configure settings first!");
@@ -68,6 +84,29 @@ function DashboardPage() {
                 <div style={{ marginBottom: '1rem', padding: '1rem', border: '1px solid #444', borderRadius: '8px', background: '#333' }}>
                     <h3>Status: <span style={{ color: isRunning ? '#646cff' : status === 'error' ? '#ef4444' : '#22c55e' }}>{status.toUpperCase()}</span></h3>
                     {lastError && <p style={{ color: '#ef4444' }}>Error: {lastError}</p>}
+
+                    <div style={{ marginTop: '1rem', marginBottom: '1rem', display: 'flex', gap: '1rem', alignItems: 'center', justifyContent: 'center' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            From:
+                            <input
+                                type="date"
+                                value={dateRange.from}
+                                onChange={(e) => setDateRange({ ...dateRange, from: e.target.value })}
+                                disabled={isRunning}
+                                style={{ padding: '0.4rem', borderRadius: '4px', border: '1px solid #555', background: '#222', color: '#fff' }}
+                            />
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            To:
+                            <input
+                                type="date"
+                                value={dateRange.to}
+                                onChange={(e) => setDateRange({ ...dateRange, to: e.target.value })}
+                                disabled={isRunning}
+                                style={{ padding: '0.4rem', borderRadius: '4px', border: '1px solid #555', background: '#222', color: '#fff' }}
+                            />
+                        </label>
+                    </div>
 
                     <div style={{ marginTop: '1rem', display: 'flex', gap: '1rem', justifyContent: 'center' }}>
                         <button onClick={handleStart} disabled={isRunning}>

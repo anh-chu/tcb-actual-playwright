@@ -21,13 +21,16 @@ export const AuthProvider = ({ children }) => {
                     setUser(res.data);
                 } catch (e) {
                     console.error("Auth check failed", e);
-                    logout();
+                    // Clear invalid token
+                    localStorage.removeItem('token');
+                    setToken(null);
+                    delete axios.defaults.headers.common['Authorization'];
                 }
             }
             setLoading(false);
         };
         initAuth();
-    }, [token]);
+    }, []); // Only run once on mount
 
     const login = async (username, password) => {
         const formData = new FormData();
@@ -67,7 +70,7 @@ export const AuthProvider = ({ children }) => {
 
     return (
         <AuthContext.Provider value={{ user, login, register, logout, loading }}>
-            {!loading && children}
+            {children}
         </AuthContext.Provider>
     );
 };

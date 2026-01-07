@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
@@ -44,7 +44,15 @@ def get_status(current_user: User = Depends(get_current_user)):
     )
 
 @app.post("/api/sync/start")
-async def start_sync(current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+async def start_sync(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    # Get optional date range from request body
+    body = await request.json() if request.headers.get("content-type") == "application/json" else {}
+    date_from = body.get("date_from")
+    date_to = body.get("date_to")
     # 1. Fetch user settings
     settings_db = session.exec(select(Settings).where(Settings.user_id == current_user.id)).first()
     if not settings_db:
@@ -75,7 +83,9 @@ async def start_sync(current_user: User = Depends(get_current_user), session: Se
         "actual_password": decrypt_value(settings_db.actual_password_enc),
         "actual_budget_id": settings_db.actual_budget_id,
         "actual_budget_password": decrypt_value(settings_db.actual_budget_password_enc) if settings_db.actual_budget_password_enc else None,
-        "accounts_mapping": final_mapping
+        "accounts_mapping": final_mapping,
+        "date_from": date_from,
+        "date_to": date_to
     }
 
     try:

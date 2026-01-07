@@ -94,7 +94,7 @@ class BankingService:
             self._set_status(AppStatus.STARTING)
             async with async_playwright() as self._playwright:
                 self._browser = await self._playwright.chromium.launch(
-                    headless=True,
+                    headless=False,
                     args=[
                         "--no-sandbox",
                         "--disable-dev-shm-usage",
@@ -194,63 +194,52 @@ class BankingService:
         logger.info("Fetching data...")
         
         try:
-            # Wait for dashboard to settle
-            await asyncio.sleep(2)
+            # Extract Authorization token from cookies
+            cookies = await self._context.cookies()
+            auth_cookie = None
+            for cookie in cookies:
+                if cookie['name'] == 'Authorization' and cookie['domain'] == 'onlinebanking.techcombank.com.vn':
+                    auth_cookie = cookie['value']
+                    break
             
-            # Start a listener for the transactions request
-            # We look for a JSON response containing transaction data
+            if not auth_cookie:
+                raise Exception("Could not find Authorization cookie")
             
-            async with self._page.expect_response(
-                lambda response: "transaction" in response.url and response.status == 200,
-                timeout=30000 
-            ) as response_info:
-                
-                # Trigger the request by clicking the first account card/item on the dashboard.
-                # TCB Dashboard usually lists accounts. We click the first one to drill down.
-                # We use a broad selector to catch 'account-item', 'account-card', etc.
-                logger.info("Clicking account to trigger fetch...")
-                
-                # Try common selectors for TCB
-                selectors = [
-                    "div[class*='account-item']",
-                    "div[class*='account-card']",
-                    ".list-account-item",
-                    "text=Xem chi tiết", # Vietnamese "View details"
-                    "text=View details",
-                    "text=Tài khoản thanh toán", # From screenshot
-                    "text=Xem tất cả" # View All
-                ]
-                
-                clicked = False
-                
-                # Wait for at least one useful element to appear to ensure dashboard is loaded
-                try:
-                    logger.info("Waiting for dashboard elements...")
-                    await self._page.wait_for_selector("text=Tài khoản thanh toán", timeout=10000)
-                except:
-                    logger.warning("Timeout waiting for 'Tài khoản thanh toán', trying other selectors...")
-
-                for sel in selectors:
-                    try:
-                        # Use a small timeout for each check instead of instant fail
-                        loc = self._page.locator(sel).first
-                        if await loc.is_visible():
-                            logger.info(f"Found selector: {sel}")
-                            await loc.click()
-                            clicked = True
-                            break
-                    except:
-                        continue
-                
-                if not clicked:
-                    # Fallback
-                    logger.warning("Could not find account selector, trying to blindly wait for background requests...")
+            logger.info("Found authorization token")
             
-            # Get response
-            response = await response_info.value
-            logger.info(f"Captured transaction response from: {response.url}")
+            # Calculate date range
+            import datetime
+            
+            # Use custom dates if provided, otherwise default to last 30 days
+            if self._config.get("date_from") and self._config.get("date_to"):
+                date_from = self._config["date_from"]
+                date_to = self._config["date_to"]
+                logger.info(f"Using custom date range: {date_from} to {date_to}")
+            else:
+                today = datetime.datetime.now().strftime("%Y-%m-%d")
+                month_ago = (datetime.datetime.now() - datetime.timedelta(days=30)).strftime("%Y-%m-%d")
+                date_from = month_ago
+                date_to = today
+                logger.info(f"Using default date range (last 30 days): {date_from} to {date_to}")
+            
+            # Make API call to get transactions
+            url = f"https://onlinebanking.techcombank.com.vn/api/transaction-manager/client-api/v2/transactions?bookingDateGreaterThan={date_from}&bookingDateLessThan={date_to}&from=0&size=500&orderBy=bookingDate&direction=DESC"
+            
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0",
+                "Accept": "application/json",
+                "Accept-Language": "en-US,en;q=0.7,vi;q=0.3",
+                "Referer": "https://onlinebanking.techcombank.com.vn/",
+                "Authorization": f"Bearer {auth_cookie}",
+            }
+            
+            response = await self._page.request.get(url=url, headers=headers)
+            
+            if response.status != 200:
+                raise Exception(f"API returned status {response.status}")
+            
             body = await response.text()
-            logger.info(f"Captured response of size: {len(body)}")
+            logger.info(f"Got {len(body)} bytes of transaction data from {date_from} to {date_to}")
             
             await self._process_save(body)
 
@@ -272,18 +261,21 @@ class BankingService:
          
          logger.info(f"Data type: {type(data_json)}")
          transactions_list = []
+
+         logger.debug(f"Data keys: {list(data_json.keys()) if isinstance(data_json, dict) else 'N/A'}")
          
          if isinstance(data_json, list):
+             # Direct list of transactions (from the proper API)
              transactions_list = data_json
          elif isinstance(data_json, dict):
-             logger.info(f"Response keys: {list(data_json.keys())}")
-             # heuristics to find the list
-             if "transactions" in data_json:
+             # Nested structure - try various paths
+             if "document" in data_json and isinstance(data_json["document"], dict):
+                 if "listTransaction" in data_json["document"]:
+                     transactions_list = data_json["document"]["listTransaction"]
+             elif "transactions" in data_json:
                  transactions_list = data_json["transactions"]
              elif "value" in data_json and isinstance(data_json["value"], list):
                  transactions_list = data_json["value"]
-             elif "value" in data_json and isinstance(data_json["value"], dict) and "transactions" in data_json["value"]:
-                 transactions_list = data_json["value"]["transactions"]
              elif "data" in data_json and isinstance(data_json["data"], list):
                  transactions_list = data_json["data"]
          
