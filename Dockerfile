@@ -9,15 +9,7 @@ RUN npm run build
 # Stage 2: Runtime
 FROM mcr.microsoft.com/playwright/python:v1.57.0-noble
 
-# Install X11 tooling (Xvfb is enough for screenshots)
-RUN apt-get update && apt-get install -y \
-    xvfb \
-    net-tools \
-    x11-utils \
-    && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
-
 
 # Install Python dependencies
 COPY requirements.txt ./
@@ -32,9 +24,7 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 # Setup Entrypoint
 RUN chmod +x entrypoint.sh
 
-# VNC and Web Port
-EXPOSE 8000 6080
-
-ENV DISPLAY=:99
+# Web Port
+EXPOSE 8000
 
 CMD ["./entrypoint.sh"]

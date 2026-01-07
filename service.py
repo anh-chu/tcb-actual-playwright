@@ -69,11 +69,20 @@ class BankingService:
             raise Exception("Sync already in progress")
         self._running = True
         self._config = config
-        # Fire and forget the main process, but we need to track it
-        asyncio.create_task(self._run_process())
+        # Store the task so we can cancel it
+        self._sync_task = asyncio.create_task(self._run_process())
 
     async def stop_sync(self):
+        logger.info("Stop requested by user")
         self._running = False
+        # Cancel the sync task if it exists
+        if hasattr(self, '_sync_task') and self._sync_task and not self._sync_task.done():
+            self._sync_task.cancel()
+            try:
+                await self._sync_task
+            except asyncio.CancelledError:
+                logger.info("Sync task cancelled successfully")
+        self._set_status(AppStatus.IDLE)
 
     def _set_status(self, status: AppStatus):
         self._status = status
@@ -85,7 +94,7 @@ class BankingService:
             self._set_status(AppStatus.STARTING)
             async with async_playwright() as self._playwright:
                 self._browser = await self._playwright.chromium.launch(
-                    headless=True, # We can run headless now as we take screenshots manually
+                    headless=True,
                     args=[
                         "--no-sandbox",
                         "--disable-dev-shm-usage",
@@ -104,11 +113,16 @@ class BankingService:
                 # Start background screenshot task
                 screenshot_task = asyncio.create_task(self._screenshot_loop())
 
-                await self._process_login()
+                if self._running:
+                    await self._process_login()
                 
                 if self._running:
                     await self._process_fetch()
 
+        except asyncio.CancelledError:
+            logger.info("Sync process cancelled")
+            self._set_status(AppStatus.IDLE)
+            raise
         except Exception as e:
             logger.error(f"Error during sync: {e}")
             self._last_error = str(e)
@@ -117,6 +131,10 @@ class BankingService:
             self._running = False
             if screenshot_task:
                 screenshot_task.cancel()
+                try:
+                    await screenshot_task
+                except asyncio.CancelledError:
+                    pass
                 
             if self._context:
                 try: await self._context.close()
