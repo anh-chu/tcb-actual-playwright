@@ -68,84 +68,123 @@ function DashboardPage() {
         }
     }
 
+    const getStatusClass = () => {
+        if (status === 'idle' || status === 'error' || status === 'success') {
+            return `status-${status}`
+        }
+        if (status === 'waiting_otp') return 'status-waiting_otp'
+        return 'status-running'
+    }
+
+    const formatLogEntry = (log) => {
+        let type = 'info'
+        if (log.toLowerCase().includes('[error]') || log.toLowerCase().includes('failed')) type = 'error'
+        if (log.toLowerCase().includes('[success]') || log.toLowerCase().includes('done')) type = 'success'
+        if (log.toLowerCase().includes('[warning]') || log.toLowerCase().includes('timeout')) type = 'warning'
+
+        return {
+            content: log,
+            className: `log-entry log-${type}`
+        }
+    }
+
     const isRunning = status !== 'idle' && status !== 'error' && status !== 'success'
     const isWaitingOtp = status === 'waiting_otp'
 
     return (
-        <>
-            <div style={{ position: 'absolute', top: '1rem', right: '1rem', display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                <span>Hello, {user?.username}</span>
-                <button onClick={() => navigate('/settings')} style={{ padding: '0.4rem' }}>Settings</button>
-                <button onClick={logout} style={{ background: '#b91c1c', padding: '0.4rem' }}>Logout</button>
+        <div className="container">
+            <div className="nav-bar">
+                <span className="nav-user">Welcome, <strong>{user?.username}</strong></span>
+                <button className="btn-secondary" style={{ padding: '0.5rem 1rem' }} onClick={() => navigate('/settings')}>Settings</button>
+                <button className="btn-danger" style={{ padding: '0.5rem 1rem' }} onClick={logout}>Logout</button>
             </div>
 
-            <h1>Techcombank Sync</h1>
-            <div className="card">
-                <div style={{ marginBottom: '1rem', padding: '1rem', border: '1px solid #444', borderRadius: '8px', background: '#333' }}>
-                    <h3>Status: <span style={{ color: isRunning ? '#646cff' : status === 'error' ? '#ef4444' : '#22c55e' }}>{status.toUpperCase()}</span></h3>
-                    {lastError && <p style={{ color: '#ef4444' }}>Error: {lastError}</p>}
+            <h1 style={{ marginBottom: '3rem' }}>Actual TCB Sync</h1>
 
-                    <div style={{ marginTop: '1rem', marginBottom: '1rem', display: 'flex', gap: '1rem', alignItems: 'center', justifyContent: 'center' }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            From:
+            <div className="glass-card" style={{ maxWidth: '800px', margin: '0 auto' }}>
+                <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
+                    <div style={{ marginBottom: '1rem' }}>
+                        <span className={`status-badge ${getStatusClass()}`}>
+                            {status.replace('_', ' ')}
+                        </span>
+                    </div>
+                    {lastError && (
+                        <div style={{ color: 'var(--error)', background: 'rgba(244, 63, 94, 0.1)', padding: '0.75rem', borderRadius: '12px', fontSize: '0.9rem', marginBottom: '1.5rem', border: '1px solid rgba(244, 63, 94, 0.2)' }}>
+                            <strong>Error:</strong> {lastError}
+                        </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center', justifyContent: 'center', marginBottom: '2rem', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: '600' }}>FROM</span>
                             <input
                                 type="date"
+                                className="input-modern"
+                                style={{ width: 'auto' }}
                                 value={dateRange.from}
                                 onChange={(e) => setDateRange({ ...dateRange, from: e.target.value })}
                                 disabled={isRunning}
-                                style={{ padding: '0.4rem', borderRadius: '4px', border: '1px solid #555', background: '#222', color: '#fff' }}
                             />
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            To:
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: '600' }}>TO</span>
                             <input
                                 type="date"
+                                className="input-modern"
+                                style={{ width: 'auto' }}
                                 value={dateRange.to}
                                 onChange={(e) => setDateRange({ ...dateRange, to: e.target.value })}
                                 disabled={isRunning}
-                                style={{ padding: '0.4rem', borderRadius: '4px', border: '1px solid #555', background: '#222', color: '#fff' }}
                             />
-                        </label>
+                        </div>
                     </div>
 
-                    <div style={{ marginTop: '1rem', display: 'flex', gap: '1rem', justifyContent: 'center' }}>
-                        <button onClick={handleStart} disabled={isRunning}>
-                            {isRunning ? 'Syncing...' : 'Start Sync Now'}
+                    <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+                        <button onClick={handleStart} disabled={isRunning} style={{ minWidth: '180px' }}>
+                            {isRunning ? 'Syncing...' : 'Start Global Sync'}
                         </button>
                         {isRunning && (
-                            <button onClick={handleStop} style={{ background: '#b91c1c' }}>
-                                Stop Sync
+                            <button className="btn-danger" onClick={handleStop} style={{ minWidth: '140px' }}>
+                                Force Stop
                             </button>
                         )}
                     </div>
                 </div>
 
-                {isRunning && (
-                    <>
-                        <div style={{ marginTop: '2rem' }}>
-                            <h2>Live View</h2>
-                            {isWaitingOtp && <div style={{ background: '#eab308', color: 'black', padding: '0.5rem', marginBottom: '0.5rem', borderRadius: '4px' }}>⚠️ Please verify OTP on your mobile app!</div>}
-                            <div style={{ border: '2px solid #666', borderRadius: '8px', overflow: 'hidden', height: '400px', width: '700px', background: '#000', margin: '0 auto' }}>
-                                <img
-                                    src="/api/stream"
-                                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                                    alt="Live Stream"
-                                />
+                {(isRunning || logs.length > 0) && (
+                    <div style={{ borderTop: '1px solid var(--glass-border)', paddingTop: '2rem' }}>
+                        {isRunning && (
+                            <div style={{ marginBottom: '2rem' }}>
+                                <h3 style={{ fontSize: '1.2rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>Live Browser Session</h3>
+                                {isWaitingOtp && (
+                                    <div style={{ background: 'rgba(245, 158, 11, 0.15)', color: 'var(--warning)', padding: '1rem', marginBottom: '1rem', borderRadius: '12px', border: '1px solid rgba(245, 158, 11, 0.2)', fontSize: '0.9rem', fontWeight: '500' }}>
+                                        ⚠️ Action Required: Verify OTP on your mobile app
+                                    </div>
+                                )}
+                                <div style={{ border: '2px solid var(--glass-border)', borderRadius: '16px', overflow: 'hidden', height: '400px', width: '100%', background: '#000', margin: '0 auto', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+                                    <img
+                                        src="/api/stream"
+                                        style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                                        alt="Browser Stream"
+                                    />
+                                </div>
+                            </div>
+                        )}
+
+                        <div style={{ textAlign: 'left' }}>
+                            <h3 style={{ fontSize: '1.2rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>Activity Logs</h3>
+                            <div className="log-container">
+                                {logs.length === 0 && <div style={{ color: 'var(--text-muted)', opacity: '0.5' }}>Waiting for activity...</div>}
+                                {logs.map((log, i) => {
+                                    const entry = formatLogEntry(log)
+                                    return <div key={i} className={entry.className}>{entry.content}</div>
+                                })}
                             </div>
                         </div>
-                        <div className="card" style={{ maxWidth: '1000px', marginTop: '1rem' }}>
-                            <h2 style={{ margin: '0 0 1rem 0' }}>Logs</h2>
-                            <div style={{ background: 'rgba(0,0,0,0.5)', padding: '1rem', borderRadius: '8px', maxHeight: '300px', overflowY: 'auto', textAlign: 'left', fontFamily: 'monospace', fontSize: '0.9rem' }}>
-                                {logs.length === 0 && <span style={{ color: '#64748b' }}>No logs yet...</span>}
-                                {logs.map((log, i) => (
-                                    <div key={i} style={{ marginBottom: '0.25rem' }}>{log}</div>
-                                ))}
-                            </div>
-                        </div>
-                    </>
+                    </div>
                 )}
             </div>
-        </>
+        </div>
     )
 }
 

@@ -147,11 +147,11 @@ export default function SettingsPage() {
     };
 
     return (
-        <div style={{ maxWidth: '900px', margin: '0 auto', padding: '2rem' }}>
-            <div className="card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '1rem' }}>
-                    <h2 style={{ margin: 0 }}>Configuration</h2>
-                    <div style={{ display: 'flex', gap: '1rem' }}>
+        <div className="container" style={{ maxWidth: '900px' }}>
+            <div className="glass-card">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2.5rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '1.5rem' }}>
+                    <h2 style={{ margin: 0 }}>Sync Configuration</h2>
+                    <div style={{ display: 'flex', gap: '0.75rem' }}>
                         <input
                             type="file"
                             ref={fileInputRef}
@@ -159,10 +159,10 @@ export default function SettingsPage() {
                             onChange={handleImport}
                             accept=".json"
                         />
-                        <button type="button" onClick={() => fileInputRef.current.click()} style={{ background: '#0891b2' }}>
+                        <button type="button" className="btn-secondary" style={{ padding: '0.5rem 1rem' }} onClick={() => fileInputRef.current.click()}>
                             Import JSON
                         </button>
-                        <button type="button" onClick={handleExport} style={{ background: '#4f46e5' }}>
+                        <button type="button" className="btn-secondary" style={{ padding: '0.5rem 1rem' }} onClick={handleExport}>
                             Export JSON
                         </button>
                     </div>
@@ -170,117 +170,128 @@ export default function SettingsPage() {
 
                 <form onSubmit={handleSubmit}>
 
-                    <h3 style={{ color: '#aaa', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '1.5rem' }}>
+                    <h3 style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ width: '8px', height: '8px', background: 'var(--primary)', borderRadius: '2px' }}></span>
                         Techcombank Credentials
                     </h3>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
                         <div className="form-group">
                             <label>Username</label>
-                            <input name="tcb_username" value={formData.tcb_username} onChange={handleChange} required />
+                            <input className="input-modern" name="tcb_username" value={formData.tcb_username} onChange={handleChange} required />
                         </div>
                         <div className="form-group">
                             <label>Password</label>
-                            <input type="password" name="tcb_password" value={formData.tcb_password} onChange={handleChange} required />
+                            <input className="input-modern" type="password" name="tcb_password" value={formData.tcb_password} onChange={handleChange} required />
                         </div>
                     </div>
 
-                    <h3 style={{ color: '#aaa', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '1.5rem' }}>
-                        Actual Budget
+                    <h3 style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ width: '8px', height: '8px', background: 'var(--info)', borderRadius: '2px' }}></span>
+                        Actual Budget Settings
                     </h3>
                     <div className="form-group">
                         <label>Server URL</label>
-                        <input name="actual_url" value={formData.actual_url} onChange={handleChange} placeholder="http://your-server:5006" required />
+                        <input className="input-modern" name="actual_url" value={formData.actual_url} onChange={handleChange} placeholder="http://your-server:5006" required />
                     </div>
                     <div className="form-group">
                         <label>Server Password</label>
-                        <input type="password" name="actual_password" value={formData.actual_password} onChange={handleChange} required />
+                        <input className="input-modern" type="password" name="actual_password" value={formData.actual_password} onChange={handleChange} required />
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
                         <div className="form-group">
                             <label>Budget ID</label>
-                            <input name="actual_budget_id" value={formData.actual_budget_id} onChange={handleChange} required />
+                            <input className="input-modern" name="actual_budget_id" value={formData.actual_budget_id} onChange={handleChange} required />
                         </div>
                         <div className="form-group">
-                            <label>Budget Encryption Password (Optional)</label>
-                            <input type="password" name="actual_budget_password" value={formData.actual_budget_password || ''} onChange={handleChange} />
+                            <label>Budget Encryption Password</label>
+                            <input className="input-modern" type="password" name="actual_budget_password" value={formData.actual_budget_password || ''} onChange={handleChange} placeholder="Skip if not encrypted" />
                         </div>
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2rem' }}>
-                        <h3 style={{ color: '#aaa', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px', margin: 0 }}>
-                            Account Mapping
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '3rem', marginBottom: '1.5rem' }}>
+                        <h3 style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '1px', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span style={{ width: '8px', height: '8px', background: 'var(--success)', borderRadius: '2px' }}></span>
+                            Account Mappings
                         </h3>
-                        <button type="button" onClick={addMapping} style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem', background: '#22c55e' }}>
+                        <button type="button" onClick={addMapping} style={{ fontSize: '0.8rem', padding: '0.5rem 1rem', background: 'var(--success)', border: 'none' }}>
                             + Add Account
                         </button>
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                         {formData.mappings.map((m, i) => (
                             <div key={i} style={{
-                                background: 'rgba(0,0,0,0.2)',
-                                padding: '1rem',
-                                borderRadius: '8px',
-                                border: '1px solid #444'
+                                background: 'rgba(0,0,0,0.3)',
+                                padding: '1.5rem',
+                                borderRadius: '16px',
+                                border: '1px solid var(--glass-border)',
+                                position: 'relative'
                             }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                                <button type="button" onClick={() => removeMapping(i)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', color: 'var(--error)', padding: '0.5rem', border: 'none', fontSize: '1.5rem', lineHeight: 1 }}>
+                                    &times;
+                                </button>
+
+                                <div className="form-group" style={{ maxWidth: '70%' }}>
                                     <input
                                         value={m.name}
                                         onChange={(e) => handleMappingChange(i, 'name', e.target.value)}
-                                        placeholder="Account Name (e.g. TCB Spend)"
-                                        style={{ fontWeight: 'bold', border: 'none', background: 'transparent', padding: 0, width: '50%' }}
+                                        placeholder="Account Name (e.g. Spending)"
+                                        className="input-modern"
+                                        style={{ fontWeight: '700', fontSize: '1.1rem', border: 'none', background: 'transparent', padding: 0 }}
                                     />
-                                    <button type="button" onClick={() => removeMapping(i)} style={{ background: 'transparent', color: '#ef4444', padding: 0, border: 'none', fontSize: '1.2rem' }}>
-                                        &times;
-                                    </button>
                                 </div>
 
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1rem' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
                                     <div>
-                                        <label style={{ fontSize: '0.8rem' }}>Actual Account UUID</label>
+                                        <label style={{ fontSize: '0.75rem', fontWeight: '700' }}>ACTUAL UUID</label>
                                         <input
+                                            className="input-modern"
                                             value={m.id}
                                             onChange={(e) => handleMappingChange(i, 'id', e.target.value)}
-                                            placeholder="UUID form Actual"
-                                            style={{ padding: '0.4rem', fontSize: '0.9rem' }}
+                                            placeholder="Account ID from Actual"
+                                            style={{ fontSize: '0.9rem' }}
                                         />
                                     </div>
                                     <div>
-                                        <label style={{ fontSize: '0.8rem' }}>TCB Account/Arrangement IDs (comma separated)</label>
+                                        <label style={{ fontSize: '0.75rem', fontWeight: '700' }}>TCB ARRANGEMENT IDs</label>
                                         <input
+                                            className="input-modern"
                                             value={getArrangmentsString(m.arrangementIds)}
                                             onChange={(e) => handleMappingChange(i, 'arrangementIds', e.target.value)}
-                                            placeholder="0ce41c5d-..."
-                                            style={{ padding: '0.4rem', fontSize: '0.9rem', fontFamily: 'monospace' }}
+                                            placeholder="comma separated IDs"
+                                            style={{ fontSize: '0.9rem', fontFamily: 'monospace' }}
                                         />
                                     </div>
                                 </div>
                             </div>
                         ))}
                         {formData.mappings.length === 0 && (
-                            <div style={{ textAlign: 'center', color: '#666', padding: '2rem', border: '2px dashed #444', borderRadius: '8px' }}>
-                                No accounts mapped. Click "Add Account" or Import JSON.
+                            <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '3rem', border: '2px dashed var(--glass-border)', borderRadius: '16px', background: 'rgba(255,255,255,0.02)' }}>
+                                No account mappings found.
                             </div>
                         )}
                     </div>
 
                     {msg && (
                         <div style={{
-                            marginTop: '1.5rem',
-                            padding: '0.75rem',
-                            borderRadius: '8px',
-                            background: msg.includes('Error') ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)',
-                            color: msg.includes('Error') ? '#fca5a5' : '#86efac',
-                            border: `1px solid ${msg.includes('Error') ? '#ef4444' : '#22c55e'} `
+                            marginTop: '2rem',
+                            padding: '1rem',
+                            borderRadius: '12px',
+                            textAlign: 'center',
+                            fontSize: '0.95rem',
+                            fontWeight: '500',
+                            background: msg.includes('Error') ? 'rgba(244, 63, 94, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                            color: msg.includes('Error') ? 'var(--error)' : 'var(--success)',
+                            border: `1px solid ${msg.includes('Error') ? 'var(--error)' : 'var(--success)'} `
                         }}>
                             {msg}
                         </div>
                     )}
 
-                    <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginTop: '2rem' }}>
-                        <button type="button" onClick={() => navigate('/')} style={{ background: 'transparent', border: '1px solid #666' }}>Cancel</button>
-                        <button type="submit">Save Changes</button>
+                    <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '3rem' }}>
+                        <button type="button" className="btn-secondary" onClick={() => navigate('/')} style={{ minWidth: '140px' }}>Back to Home</button>
+                        <button type="submit" style={{ minWidth: '180px' }}>Save All Settings</button>
                     </div>
                 </form>
             </div>

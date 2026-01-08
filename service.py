@@ -1,10 +1,10 @@
 import asyncio
 import json
 import logging
+import datetime
 from enum import Enum
 from typing import Optional
 from playwright.async_api import async_playwright, Playwright, Page, Browser, BrowserContext, expect
-from modules import convert, actual
 from modules import convert, actual
 from modules.logger import logger
 
@@ -124,9 +124,19 @@ class BankingService:
             self._set_status(AppStatus.IDLE)
             raise
         except Exception as e:
-            logger.error(f"Error during sync: {e}")
-            self._last_error = str(e)
-            self._set_status(AppStatus.ERROR)
+            err_msg = str(e)
+            # Suppress noisy Playwright errors during manual stop
+            cancellation_keywords = ["net::ERR_ABORTED", "Page closed", "Target closed", "browser has been closed"]
+            is_cancellation_error = any(k in err_msg for k in cancellation_keywords)
+            
+            if not self._running or is_cancellation_error:
+                logger.info(f"Sync stopped or cancelled: {err_msg}")
+                if self._status != AppStatus.SUCCESS:
+                    self._set_status(AppStatus.IDLE)
+            else:
+                logger.error(f"Error during sync: {err_msg}")
+                self._last_error = err_msg
+                self._set_status(AppStatus.ERROR)
         finally:
             self._running = False
             if screenshot_task:
@@ -155,14 +165,6 @@ class BankingService:
                 except Exception:
                     pass
             await asyncio.sleep(0.5)
-
-    async def start_sync(self, config: dict):
-        if self._running:
-            raise Exception("Sync already in progress")
-        self._running = True
-        self._config = config  # Store config for this session
-        # Fire and forget the main process, but we need to track it
-        asyncio.create_task(self._run_process())
 
     async def _process_login(self):
         self._set_status(AppStatus.LOGGING_IN)
@@ -208,7 +210,6 @@ class BankingService:
             logger.info("Found authorization token")
             
             # Calculate date range
-            import datetime
             
             # Use custom dates if provided, otherwise default to last 30 days
             if self._config.get("date_from") and self._config.get("date_to"):
