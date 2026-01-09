@@ -94,7 +94,7 @@ class BankingService:
             self._set_status(AppStatus.STARTING)
             async with async_playwright() as self._playwright:
                 self._browser = await self._playwright.chromium.launch(
-                    headless=False,
+                    headless=True,
                     args=[
                         "--no-sandbox",
                         "--disable-dev-shm-usage",
