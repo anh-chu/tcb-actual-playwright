@@ -208,7 +208,33 @@ class BankingService:
                 raise Exception("Could not find Authorization cookie")
             
             logger.info("Found authorization token")
-            
+
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0",
+                "Accept": "application/json",
+                "Accept-Language": "en-US,en;q=0.7,vi;q=0.3",
+                "Referer": "https://onlinebanking.techcombank.com.vn/",
+                "Authorization": f"Bearer {auth_cookie}",
+            }
+
+            # Refresh transaction history on TCB side before reading.
+            # Without this, the listing endpoint can return stale data.
+            arrangement_ids = list(self._config.get("accounts_mapping", {}).keys())
+            if arrangement_ids:
+                refresh_url = "https://onlinebanking.techcombank.com.vn/api/sync-dis/client-api/v1/transactions/refresh"
+                logger.info(f"Refreshing transactions for {len(arrangement_ids)} arrangement(s)")
+                refresh_resp = await self._page.request.post(
+                    url=refresh_url,
+                    headers={**headers, "Content-Type": "application/json"},
+                    data=json.dumps({"externalArrangementIds": arrangement_ids}),
+                )
+                if refresh_resp.status >= 400:
+                    logger.warning(f"Refresh returned status {refresh_resp.status}, continuing anyway")
+                else:
+                    logger.info("Refresh accepted")
+            else:
+                logger.warning("No arrangement IDs in mapping, skipping refresh")
+
             # Calculate date range
             
             # Use custom dates if provided, otherwise default to last 30 days
@@ -225,15 +251,7 @@ class BankingService:
             
             # Make API call to get transactions
             url = f"https://onlinebanking.techcombank.com.vn/api/transaction-manager/client-api/v2/transactions?bookingDateGreaterThan={date_from}&bookingDateLessThan={date_to}&from=0&size=500&orderBy=bookingDate&direction=DESC"
-            
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0",
-                "Accept": "application/json",
-                "Accept-Language": "en-US,en;q=0.7,vi;q=0.3",
-                "Referer": "https://onlinebanking.techcombank.com.vn/",
-                "Authorization": f"Bearer {auth_cookie}",
-            }
-            
+
             response = await self._page.request.get(url=url, headers=headers)
             
             if response.status != 200:

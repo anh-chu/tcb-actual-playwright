@@ -1,0 +1,29 @@
+# Libraries
+
+- `app.py`
+  - function on_startup: ()
+  - function generate_mjpeg_stream: ()
+  - function video_feed: ()
+  - class StatusResponse
+- `auth.py`
+  - function verify_password: (plain_password, hashed_password)
+  - function get_password_hash: (password)
+  - function encrypt_value: (value) -> str
+  - function decrypt_value: (token) -> str
+  - function create_access_token: (data, expires_delta)
+- `database.py` — function create_db_and_tables: (), function get_session: ()
+- `models.py` — class User, class Settings
+- `modules/actual.py` — function init_actual: (config), function import_transactions: (token, account_id, transactions, actual_url)
+- `modules/config.py` — function get_config: ()
+- `modules/convert.py` — function convert_to_actual_transaction: (transaction, mapping), function convert_to_actual_import: (transactions, mapping)
+- `modules/exchange_rate.py` — function get_exchange_rate: (currency)
+- `modules/logger.py`
+  - function consoleHandler: (time, level) -> logging.StreamHandler
+  - function fileHandler: (file, level) -> logging.FileHandler
+  - class Logger
+- `routers/auth.py` — class UserRegister, class Token
+- `routers/settings.py` — class SettingsSchema
+- `service.py`
+  - class AppStatus
+  - class ListHandler
+  - class BankingService
