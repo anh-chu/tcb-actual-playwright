@@ -167,3 +167,25 @@ uploads/
 data.json
 
 Dockerfile
+.dockerignore
+
+# Repo metadata / dev tooling
+.git/
+.github/
+.gitignore
+.pi/
+.codesight/
+.vscode/
+.cursorrules
+.pre-commit-config.yaml
+*.md
+pdm.lock
+pyproject.toml
+run_local.sh
+
+# Frontend node_modules — dist is built in-stage, source is not copied to runtime
+frontend/node_modules/
+frontend/dist/
+
+# Tests
+tests/

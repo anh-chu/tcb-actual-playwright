@@ -7,24 +7,28 @@ COPY frontend/ .
 RUN npm run build
 
 # Stage 2: Runtime
-FROM mcr.microsoft.com/playwright/python:v1.57.0-noble
+FROM python:3.10-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 WORKDIR /app
 
-# Install Python dependencies
 COPY requirements.txt ./
-RUN pip install --no-cache-dir --ignore-installed -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+ && playwright install --with-deps chromium-headless-shell \
+ && rm -rf /root/.cache /var/lib/apt/lists/*
 
-# Copy App Code
-COPY . .
-
-# Copy Frontend Build from Stage 1
+# Copy only runtime sources
+COPY app.py auth.py database.py models.py service.py entrypoint.sh ./
+COPY modules ./modules
+COPY routers ./routers
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
-# Setup Entrypoint
 RUN chmod +x entrypoint.sh
 
-# Web Port
 EXPOSE 8000
 
 CMD ["./entrypoint.sh"]
