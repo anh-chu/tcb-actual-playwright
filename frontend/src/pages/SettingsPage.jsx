@@ -4,16 +4,16 @@ import { useNavigate } from 'react-router-dom';
 
 export default function SettingsPage() {
     const [formData, setFormData] = useState({
-        // ... (rest of the file is fine, just removing the wrapper)
         tcb_username: '',
         tcb_password: '',
         actual_url: '',
         actual_password: '',
         actual_budget_id: '',
         actual_budget_password: '',
-        // Mappings will be parsed into this array
         mappings: []
     });
+    const [actualAccounts, setActualAccounts] = useState([]);
+    const [loadingAccounts, setLoadingAccounts] = useState(false);
     const [msg, setMsg] = useState('');
     const fileInputRef = useRef(null);
     const navigate = useNavigate();
@@ -23,27 +23,21 @@ export default function SettingsPage() {
             try {
                 const res = await axios.get('/api/settings/');
                 const data = res.data;
-
-                // Parse the stored JSON string for mappings
                 let parsedMappings = [];
                 try {
                     const raw = JSON.parse(data.accounts_mapping || '[]');
-                    if (Array.isArray(raw)) {
-                        parsedMappings = raw;
-                    } else {
-                        // Convert legacy flat dict to list format
-                        parsedMappings = Object.entries(raw).map(([tcbId, actualId]) => ({
-                            id: actualId,
-                            name: 'Legacy Import',
-                            arrangementIds: [tcbId]
-                        }));
-                    }
-                } catch (e) {
-                    console.error("Failed to parse mappings", e);
-                }
-
+                    parsedMappings = Array.isArray(raw)
+                        ? raw
+                        : Object.entries(raw).map(([tcbId, actualId]) => ({
+                            id: actualId, name: 'Imported', arrangementIds: [tcbId]
+                          }));
+                } catch { /* ignore malformed mapping JSON */ }
                 setFormData({
                     ...data,
+                    actual_url: data.actual_url || '',
+                    actual_password: data.actual_password || '',
+                    actual_budget_id: data.actual_budget_id || '',
+                    actual_budget_password: data.actual_budget_password || '',
                     mappings: parsedMappings
                 });
             } catch (e) {
@@ -53,43 +47,52 @@ export default function SettingsPage() {
         fetchSettings();
     }, []);
 
+    const fetchActualAccounts = async () => {
+        setLoadingAccounts(true);
+        try {
+            const res = await axios.get('/api/actual/accounts');
+            setActualAccounts(res.data.accounts || []);
+        } catch (e) {
+            setMsg('Error fetching Actual accounts: ' + (e.response?.data?.detail || e.message));
+        } finally {
+            setLoadingAccounts(false);
+        }
+    };
+
     const handleChange = (e) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
     };
 
     const handleMappingChange = (index, field, value) => {
-        const newMappings = [...formData.mappings];
+        const updated = [...formData.mappings];
         if (field === 'arrangementIds') {
-            // split by comma for UI editing, but store as array
-            newMappings[index][field] = value.split(',').map(s => s.trim());
+            updated[index][field] = value.split(',').map(s => s.trim());
         } else {
-            newMappings[index][field] = value;
+            updated[index][field] = value;
         }
-        setFormData({ ...formData, mappings: newMappings });
+        setFormData({ ...formData, mappings: updated });
     };
 
     const addMapping = () => {
         setFormData({
             ...formData,
-            mappings: [...formData.mappings, { id: '', name: 'New Account', arrangementIds: [] }]
+            mappings: [...formData.mappings, { id: '', name: '', arrangementIds: [] }]
         });
     };
 
     const removeMapping = (index) => {
-        const newMappings = [...formData.mappings];
-        newMappings.splice(index, 1);
-        setFormData({ ...formData, mappings: newMappings });
+        const updated = [...formData.mappings];
+        updated.splice(index, 1);
+        setFormData({ ...formData, mappings: updated });
     };
 
     const handleImport = (e) => {
         const file = e.target.files[0];
         if (!file) return;
-
         const reader = new FileReader();
         reader.onload = (evt) => {
             try {
                 const json = JSON.parse(evt.target.result);
-                // Merge imported data
                 setFormData(prev => ({
                     ...prev,
                     tcb_username: json.tcb_username || prev.tcb_username,
@@ -100,201 +103,291 @@ export default function SettingsPage() {
                     actual_budget_password: json.actual_budget_password || prev.actual_budget_password,
                     mappings: json.mappings || prev.mappings
                 }));
-                setMsg('Configuration imported successfully!');
-            } catch (err) {
-                setMsg('Error parsing JSON file: ' + err.message);
+            } catch {
+                setMsg('Error: Invalid JSON file');
             }
         };
         reader.readAsText(file);
-        // Reset input
-        e.target.value = null;
+        e.target.value = '';
     };
 
     const handleExport = () => {
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(formData, null, 4));
-        const downloadAnchorNode = document.createElement('a');
-        downloadAnchorNode.setAttribute("href", dataStr);
-        downloadAnchorNode.setAttribute("download", "tcb_actual_config.json");
-        document.body.appendChild(downloadAnchorNode);
-        downloadAnchorNode.click();
-        downloadAnchorNode.remove();
+        const blob = new Blob([JSON.stringify({
+            tcb_username: formData.tcb_username,
+            tcb_password: formData.tcb_password,
+            actual_url: formData.actual_url,
+            actual_password: formData.actual_password,
+            actual_budget_id: formData.actual_budget_id,
+            actual_budget_password: formData.actual_budget_password,
+            mappings: formData.mappings
+        }, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'tcb-actual-settings.json';
+        a.click();
+        URL.revokeObjectURL(url);
     };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
-            // Prepare payload: convert mappings array back to JSON string for storage
-            const payload = {
-                ...formData,
+            await axios.post('/api/settings/', {
+                tcb_username: formData.tcb_username,
+                tcb_password: formData.tcb_password,
+                actual_url: formData.actual_url,
+                actual_password: formData.actual_password,
+                actual_budget_id: formData.actual_budget_id,
+                actual_budget_password: formData.actual_budget_password,
                 accounts_mapping: JSON.stringify(formData.mappings)
-            };
-            // Remove temporary mappings field from payload to match schema if necessary
-            // But our schema in frontend is just constructing the object. 
-            // The backend expects accounts_mapping string.
-
-            await axios.post('/api/settings/', payload);
-            setMsg('Settings saved successfully!');
-            setTimeout(() => navigate('/'), 1500);
-        } catch (e) {
-            setMsg('Error saving settings: ' + (e.response?.data?.detail || e.message));
+            });
+            setMsg('Settings saved.');
+        } catch (err) {
+            setMsg('Error: ' + (err.response?.data?.detail || err.message));
         }
     };
 
-    // Helper to join array for display
-    const getArrangmentsString = (arrIds) => {
-        if (!arrIds) return "";
-        return Array.isArray(arrIds) ? arrIds.join(', ') : arrIds;
+    const getArrangementsString = (arr) =>
+        Array.isArray(arr) ? arr.join(', ') : (arr || '');
+
+    const actualAccountLabel = (acc) => {
+        const flags = [];
+        if (acc.offbudget) flags.push('off-budget');
+        if (acc.closed) flags.push('closed');
+        return flags.length ? `${acc.name} (${flags.join(', ')})` : acc.name;
     };
 
     return (
-        <div className="container" style={{ maxWidth: '900px' }}>
-            <div className="glass-card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2.5rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '1.5rem' }}>
-                    <h2 style={{ margin: 0 }}>Sync Configuration</h2>
-                    <div style={{ display: 'flex', gap: '0.75rem' }}>
-                        <input
-                            type="file"
-                            ref={fileInputRef}
-                            style={{ display: 'none' }}
-                            onChange={handleImport}
-                            accept=".json"
-                        />
-                        <button type="button" className="btn-secondary" style={{ padding: '0.5rem 1rem' }} onClick={() => fileInputRef.current.click()}>
-                            Import JSON
-                        </button>
-                        <button type="button" className="btn-secondary" style={{ padding: '0.5rem 1rem' }} onClick={handleExport}>
-                            Export JSON
-                        </button>
-                    </div>
+        <div className="app-shell">
+            <nav className="top-nav">
+                <span className="top-nav-brand">TCB → Actual</span>
+                <div className="top-nav-actions">
+                    <button className="btn-ghost btn-sm" onClick={() => navigate('/')}>← Dashboard</button>
+                </div>
+            </nav>
+
+            <main className="page-content">
+                <div className="page-header">
+                    <h1>Settings</h1>
+                    <p>Techcombank and Actual Budget credentials</p>
                 </div>
 
                 <form onSubmit={handleSubmit}>
-
-                    <h3 style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{ width: '8px', height: '8px', background: 'var(--primary)', borderRadius: '2px' }}></span>
-                        Techcombank Credentials
-                    </h3>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-                        <div className="form-group">
-                            <label>Username</label>
-                            <input className="input-modern" name="tcb_username" value={formData.tcb_username} onChange={handleChange} required />
-                        </div>
-                        <div className="form-group">
-                            <label>Password</label>
-                            <input className="input-modern" type="password" name="tcb_password" value={formData.tcb_password} onChange={handleChange} required />
-                        </div>
-                    </div>
-
-                    <h3 style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{ width: '8px', height: '8px', background: 'var(--info)', borderRadius: '2px' }}></span>
-                        Actual Budget Settings
-                    </h3>
-                    <div className="form-group">
-                        <label>Server URL</label>
-                        <input className="input-modern" name="actual_url" value={formData.actual_url} onChange={handleChange} placeholder="http://your-server:5006" required />
-                    </div>
-                    <div className="form-group">
-                        <label>Server Password</label>
-                        <input className="input-modern" type="password" name="actual_password" value={formData.actual_password} onChange={handleChange} required />
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-                        <div className="form-group">
-                            <label>Budget ID</label>
-                            <input className="input-modern" name="actual_budget_id" value={formData.actual_budget_id} onChange={handleChange} required />
-                        </div>
-                        <div className="form-group">
-                            <label>Budget Encryption Password</label>
-                            <input className="input-modern" type="password" name="actual_budget_password" value={formData.actual_budget_password || ''} onChange={handleChange} placeholder="Skip if not encrypted" />
+                    {/* Techcombank */}
+                    <div className="card" style={{ marginBottom: '0.875rem' }}>
+                        <h2>Techcombank</h2>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.875rem' }} className="grid-2">
+                            <div className="form-field">
+                                <label className="field-label">Username</label>
+                                <input
+                                    className="input-modern"
+                                    name="tcb_username"
+                                    value={formData.tcb_username}
+                                    onChange={handleChange}
+                                    placeholder="TCB username"
+                                />
+                            </div>
+                            <div className="form-field">
+                                <label className="field-label">Password</label>
+                                <input
+                                    className="input-modern"
+                                    type="password"
+                                    name="tcb_password"
+                                    value={formData.tcb_password}
+                                    onChange={handleChange}
+                                    placeholder="TCB password"
+                                />
+                            </div>
                         </div>
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '3rem', marginBottom: '1.5rem' }}>
-                        <h3 style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '1px', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <span style={{ width: '8px', height: '8px', background: 'var(--success)', borderRadius: '2px' }}></span>
-                            Account Mappings
-                        </h3>
-                        <button type="button" onClick={addMapping} style={{ fontSize: '0.8rem', padding: '0.5rem 1rem', background: 'var(--success)', border: 'none' }}>
-                            + Add Account
-                        </button>
+                    {/* Actual Budget */}
+                    <div className="card" style={{ marginBottom: '0.875rem' }}>
+                        <h2>Actual Budget</h2>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.875rem' }} className="grid-2">
+                            <div className="form-field">
+                                <label className="field-label">Server URL</label>
+                                <input
+                                    className="input-modern input-mono"
+                                    name="actual_url"
+                                    value={formData.actual_url}
+                                    onChange={handleChange}
+                                    placeholder="http://192.168.31.193:5006"
+                                    required
+                                />
+                            </div>
+                            <div className="form-field">
+                                <label className="field-label">Server Password</label>
+                                <input
+                                    className="input-modern"
+                                    type="password"
+                                    name="actual_password"
+                                    value={formData.actual_password}
+                                    onChange={handleChange}
+                                    required
+                                />
+                            </div>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.875rem', marginTop: '0.875rem' }} className="grid-2">
+                            <div className="form-field">
+                                <label className="field-label">Budget Sync ID</label>
+                                <input
+                                    className="input-modern input-mono"
+                                    name="actual_budget_id"
+                                    value={formData.actual_budget_id}
+                                    onChange={handleChange}
+                                    placeholder="found in Settings → Advanced"
+                                    required
+                                />
+                            </div>
+                            <div className="form-field">
+                                <label className="field-label">Budget Password</label>
+                                <input
+                                    className="input-modern"
+                                    type="password"
+                                    name="actual_budget_password"
+                                    value={formData.actual_budget_password || ''}
+                                    onChange={handleChange}
+                                    placeholder="Leave empty if the budget is not encrypted"
+                                />
+                            </div>
+                        </div>
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    {/* Account Mappings */}
+                    <div className="card" style={{ marginBottom: '0.875rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                            <h2 style={{ margin: 0 }}>Account Mappings</h2>
+                            <div style={{ display: 'flex', gap: '0.375rem' }}>
+                                <button
+                                    type="button"
+                                    className="btn-ghost btn-sm"
+                                    onClick={fetchActualAccounts}
+                                    disabled={loadingAccounts}
+                                >
+                                    {loadingAccounts ? 'Loading...' : 'Fetch Actual Accounts'}
+                                </button>
+                                <button type="button" className="btn-ghost btn-sm" onClick={addMapping}>
+                                    + Add
+                                </button>
+                            </div>
+                        </div>
+
+                        <p className="field-hint" style={{ marginBottom: '0.875rem' }}>
+                            Save the Actual credentials above first — accounts are read using the saved settings.
+                        </p>
+
+                        {actualAccounts.length > 0 && (
+                            <div className="alert alert-info" style={{ marginBottom: '0.875rem' }}>
+                                {actualAccounts.length} Actual account{actualAccounts.length !== 1 ? 's' : ''} loaded — select from dropdown below
+                            </div>
+                        )}
+
+                        {formData.mappings.length === 0 && (
+                            <div style={{
+                                padding: '2rem', textAlign: 'center',
+                                color: 'var(--text-muted)', fontSize: '0.8125rem',
+                                border: '1px dashed var(--border)', borderRadius: '8px'
+                            }}>
+                                No mappings yet
+                            </div>
+                        )}
+
                         {formData.mappings.map((m, i) => (
                             <div key={i} style={{
-                                background: 'rgba(0,0,0,0.3)',
-                                padding: '1.5rem',
-                                borderRadius: '16px',
-                                border: '1px solid var(--glass-border)',
-                                position: 'relative'
+                                background: 'rgba(255,255,255,0.02)',
+                                border: '1px solid var(--border)',
+                                borderRadius: '8px',
+                                padding: '0.875rem',
+                                marginBottom: '0.625rem'
                             }}>
-                                <button type="button" onClick={() => removeMapping(i)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', color: 'var(--error)', padding: '0.5rem', border: 'none', fontSize: '1.5rem', lineHeight: 1 }}>
-                                    &times;
-                                </button>
-
-                                <div className="form-group" style={{ maxWidth: '70%' }}>
+                                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', alignItems: 'center' }}>
                                     <input
+                                        className="input-modern"
                                         value={m.name}
                                         onChange={(e) => handleMappingChange(i, 'name', e.target.value)}
-                                        placeholder="Account Name (e.g. Spending)"
-                                        className="input-modern"
-                                        style={{ fontWeight: '700', fontSize: '1.1rem', border: 'none', background: 'transparent', padding: 0 }}
+                                        placeholder="Account name"
+                                        style={{ flex: 1 }}
                                     />
+                                    <button
+                                        type="button"
+                                        className="btn-danger btn-sm"
+                                        onClick={() => removeMapping(i)}
+                                    >
+                                        Remove
+                                    </button>
                                 </div>
 
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-                                    <div>
-                                        <label style={{ fontSize: '0.75rem', fontWeight: '700' }}>ACTUAL UUID</label>
-                                        <input
-                                            className="input-modern"
-                                            value={m.id}
-                                            onChange={(e) => handleMappingChange(i, 'id', e.target.value)}
-                                            placeholder="Account ID from Actual"
-                                            style={{ fontSize: '0.9rem' }}
-                                        />
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }} className="grid-2">
+                                    <div className="form-field">
+                                        <label className="field-label">Actual Account</label>
+                                        {actualAccounts.length > 0 ? (
+                                            <select
+                                                className="input-modern"
+                                                value={m.id}
+                                                onChange={(e) => {
+                                                    const acc = actualAccounts.find(a => a.id === e.target.value);
+                                                    const updated = [...formData.mappings];
+                                                    updated[i].id = e.target.value;
+                                                    if (acc && !updated[i].name) updated[i].name = acc.name;
+                                                    setFormData({ ...formData, mappings: updated });
+                                                }}
+                                            >
+                                                <option value="">Select account...</option>
+                                                {actualAccounts.map(acc => (
+                                                    <option key={acc.id} value={acc.id}>
+                                                        {actualAccountLabel(acc)}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        ) : (
+                                            <input
+                                                className="input-modern input-mono"
+                                                value={m.id}
+                                                onChange={(e) => handleMappingChange(i, 'id', e.target.value)}
+                                                placeholder="Actual account UUID"
+                                            />
+                                        )}
                                     </div>
-                                    <div>
-                                        <label style={{ fontSize: '0.75rem', fontWeight: '700' }}>TCB ARRANGEMENT IDs</label>
+                                    <div className="form-field">
+                                        <label className="field-label">TCB Arrangement IDs</label>
                                         <input
-                                            className="input-modern"
-                                            value={getArrangmentsString(m.arrangementIds)}
+                                            className="input-modern input-mono"
+                                            value={getArrangementsString(m.arrangementIds)}
                                             onChange={(e) => handleMappingChange(i, 'arrangementIds', e.target.value)}
                                             placeholder="comma separated IDs"
-                                            style={{ fontSize: '0.9rem', fontFamily: 'monospace' }}
                                         />
                                     </div>
                                 </div>
                             </div>
                         ))}
-                        {formData.mappings.length === 0 && (
-                            <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '3rem', border: '2px dashed var(--glass-border)', borderRadius: '16px', background: 'rgba(255,255,255,0.02)' }}>
-                                No account mappings found.
-                            </div>
-                        )}
                     </div>
 
                     {msg && (
-                        <div style={{
-                            marginTop: '2rem',
-                            padding: '1rem',
-                            borderRadius: '12px',
-                            textAlign: 'center',
-                            fontSize: '0.95rem',
-                            fontWeight: '500',
-                            background: msg.includes('Error') ? 'rgba(244, 63, 94, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                            color: msg.includes('Error') ? 'var(--error)' : 'var(--success)',
-                            border: `1px solid ${msg.includes('Error') ? 'var(--error)' : 'var(--success)'} `
-                        }}>
+                        <div className={`alert ${msg.includes('Error') ? 'alert-error' : 'alert-success'}`}
+                            style={{ marginBottom: '0.875rem' }}>
                             {msg}
                         </div>
                     )}
 
-                    <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '3rem' }}>
-                        <button type="button" className="btn-secondary" onClick={() => navigate('/')} style={{ minWidth: '140px' }}>Back to Home</button>
-                        <button type="submit" style={{ minWidth: '180px' }}>Save All Settings</button>
+                    <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                        <input
+                            type="file"
+                            accept=".json"
+                            ref={fileInputRef}
+                            onChange={handleImport}
+                            style={{ display: 'none' }}
+                        />
+                        <button type="button" className="btn-ghost btn-sm" onClick={() => fileInputRef.current?.click()}>
+                            Import JSON
+                        </button>
+                        <button type="button" className="btn-ghost btn-sm" onClick={handleExport}>
+                            Export JSON
+                        </button>
+                        <button type="submit">Save Settings</button>
                     </div>
                 </form>
-            </div>
+            </main>
         </div>
     );
 }
