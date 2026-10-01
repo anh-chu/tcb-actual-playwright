@@ -415,6 +415,25 @@ select.input-modern:focus {
   border: 1px solid var(--border);
 }
 
+.skip-list {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.skip-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.75rem;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
 @media (max-width: 520px) {
   .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

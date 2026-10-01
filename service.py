@@ -312,16 +312,64 @@ class BankingService:
          logger.info(f"Converting {len(transactions_list)} transactions...")
          
          mapping = self._config.get("accounts_mapping", {})
+         active = convert.active_arrangements(transactions_list)
          orphaned = convert.unmapped_arrangements(transactions_list, mapping)
+         idle = sorted(set(mapping) - set(active))
          if orphaned:
              detail = ", ".join(f"{a} ({n} txns)" for a, n in orphaned.items())
-             logger.warning(f"Skipped {sum(orphaned.values())} transaction(s) from unmapped arrangement(s): {detail}")
+             logger.warning(
+                 f"{sum(orphaned.values())} transaction(s) skipped, arrangement not mapped: {detail}"
+             )
+         if idle:
+             logger.info(
+                 f"{len(idle)} mapped arrangement(s) returned no transactions in this window: "
+                 f"{', '.join(idle)}"
+             )
+
+         summary = {
+             "date_from": self._config.get("date_from"),
+             "date_to": self._config.get("date_to"),
+             "transactions_fetched": len(transactions_list),
+             "active_arrangements": len(active),
+             "unmapped_arrangements": orphaned,
+             "skipped_unmapped": sum(orphaned.values()),
+             "invalid_targets": {},
+             "skipped_invalid": 0,
+             "idle_arrangements": idle,
+             "actual_accounts_known": None,
+             "accounts": {},
+             "total_added": 0,
+             "total_updated": 0,
+         }
+
+         def _finish_with_error(message: str) -> None:
+             summary["finished_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+             self._last_result = summary
+             self._last_error = message
+             logger.error(message)
+             self._set_status(AppStatus.ERROR)
+
+         # Transactions arrived but nothing is mapped. Reporting success here is what
+         # makes a broken mapping look like a working sync.
+         if transactions_list and not mapping:
+             _finish_with_error(
+                 f"{len(transactions_list)} transaction(s) fetched from {len(active)} bank "
+                 "arrangement(s), but no account is mapped, so nothing was imported. "
+                 "Add the mappings in Settings."
+             )
+             return
 
          converted = convert.convert_to_transactions(transactions_list, mapping)
 
          if not converted:
-             logger.warning("Nothing to import: no transactions matched the account mapping")
-             self._set_status(AppStatus.SUCCESS)
+             if active:
+                 _finish_with_error(
+                     f"{len(transactions_list)} transaction(s) from {len(active)} arrangement(s) "
+                     "could not be routed to any account, so nothing was imported."
+                 )
+             else:
+                 logger.info("No transactions in the requested window; nothing to import")
+                 self._set_status(AppStatus.SUCCESS)
              return
 
          logger.info("Fetching Actual's token...")
@@ -336,16 +384,44 @@ class BankingService:
 
          actual_token = await loop.run_in_executor(None, lambda: actual.init_actual(actual_config))
 
-         summary = {
-             "date_from": self._config.get("date_from"),
-             "date_to": self._config.get("date_to"),
-             "transactions_fetched": len(transactions_list),
-             "skipped_unmapped": sum(orphaned.values()),
-             "unmapped_arrangements": orphaned,
-             "accounts": {},
-             "total_added": 0,
-             "total_updated": 0,
-         }
+         # Verify every mapped target still exists in Actual. Actual's import accepts
+         # an unknown account id and files the rows under it, where nothing can ever
+         # display them: the sync reports success and the transactions silently
+         # vanish. Drop those arrangements instead of writing into an account that
+         # does not exist.
+         try:
+             known = await loop.run_in_executor(
+                 None,
+                 partial(actual.list_accounts, actual_token, actual_config["url"]),
+             )
+             known_ids = {a.get("id") for a in known if isinstance(a, dict)}
+         except Exception as e:
+             known_ids = None
+             logger.warning(f"Could not list Actual accounts to validate the mapping: {e}")
+
+         if known_ids is not None:
+             summary["actual_accounts_known"] = len(known_ids)
+             invalid = convert.invalid_targets(transactions_list, mapping, known_ids)
+             if invalid:
+                 summary["invalid_targets"] = invalid
+                 summary["skipped_invalid"] = sum(v["transactions"] for v in invalid.values())
+                 detail = ", ".join(
+                     f"{a} -> {v['account']} ({v['transactions']} txns)"
+                     for a, v in invalid.items()
+                 )
+                 logger.error(
+                     f"{summary['skipped_invalid']} transaction(s) NOT imported, mapped to an "
+                     f"Actual account that does not exist: {detail}"
+                 )
+                 for arrangement in invalid:
+                     converted.pop(mapping[arrangement], None)
+
+         if not converted:
+             _finish_with_error(
+                 "Nothing imported: every mapped arrangement points at an Actual account that "
+                 "does not exist. Check the account mappings in Settings."
+             )
+             return
 
          logger.info(f"Importing data to Actual for {len(converted)} account(s)...")
          # partial() binds the loop variables by value. A bare lambda captures them

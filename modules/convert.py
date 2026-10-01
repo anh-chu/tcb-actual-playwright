@@ -55,18 +55,48 @@ def convert_transaction(transaction: Dict, mapping: Dict):
     return out
 
 
+def active_arrangements(transactions: List[Dict]) -> Dict[str, int]:
+    """Count fetched transactions per arrangementId.
+
+    This is the census the routing checks are built on: which bank arrangements
+    actually had activity in the window, and how much.
+    """
+    counts: Dict[str, int] = {}
+    for t in transactions:
+        arrangement = t.get("arrangementId")
+        if arrangement:
+            counts[arrangement] = counts.get(arrangement, 0) + 1
+    return counts
+
+
 def unmapped_arrangements(transactions: List[Dict], mapping: Dict) -> Dict[str, int]:
     """Count transactions whose arrangementId is missing from the mapping.
 
     convert_transaction() silently drops these, so without this the only symptom
     of a new card or account is transactions quietly not appearing in the budget.
     """
-    counts: Dict[str, int] = {}
-    for t in transactions:
-        arrangement = t.get("arrangementId")
-        if arrangement and arrangement not in mapping:
-            counts[arrangement] = counts.get(arrangement, 0) + 1
-    return counts
+    return {
+        arrangement: count
+        for arrangement, count in active_arrangements(transactions).items()
+        if arrangement not in mapping
+    }
+
+
+def invalid_targets(
+    transactions: List[Dict], mapping: Dict, known_account_ids
+) -> Dict[str, Dict]:
+    """Arrangements mapped to an Actual account that does not exist.
+
+    Actual's import accepts an unknown account id and files the rows under it,
+    where nothing can ever display them: the sync reports success and the
+    transactions silently vanish. These arrangements must not be imported.
+    """
+    known = set(known_account_ids)
+    return {
+        arrangement: {"account": mapping[arrangement], "transactions": count}
+        for arrangement, count in active_arrangements(transactions).items()
+        if arrangement in mapping and mapping[arrangement] not in known
+    }
 
 
 def convert_to_transactions(transactions: List[Dict], mapping: Dict):

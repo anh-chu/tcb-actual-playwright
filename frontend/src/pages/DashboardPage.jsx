@@ -131,6 +131,12 @@ function DashboardPage() {
     const isPresetActive = (preset) =>
         dateRange.from === preset.from() && dateRange.to === preset.to()
 
+    // Transactions that were fetched but could not be routed anywhere: either the
+    // bank arrangement has no mapping, or the mapping points at an account that
+    // does not exist in Actual.
+    const skippedTotal =
+        (lastResult?.skipped_unmapped ?? 0) + (lastResult?.skipped_invalid ?? 0)
+
     return (
         <div className="app-shell">
             <nav className="top-nav">
@@ -162,6 +168,27 @@ function DashboardPage() {
                     {isWaitingOtp && (
                         <div className="alert alert-warning" style={{ marginBottom: '1.25rem' }}>
                             Action required — verify the login on the Techcombank mobile app
+                        </div>
+                    )}
+
+                    {/* Persistent flag: the last run left transactions behind. Stays up
+                        until the mapping is fixed, not just for the moment of the click. */}
+                    {!isRunning && !banner && lastResult && skippedTotal > 0 && (
+                        <div
+                            className={`alert alert-${lastResult.skipped_invalid ? 'error' : 'warning'}`}
+                            style={{ marginBottom: '1.25rem' }}
+                        >
+                            Last run did not import {skippedTotal} transaction(s):{' '}
+                            {lastResult.skipped_invalid
+                                ? 'mapped to an Actual account that does not exist'
+                                : 'bank arrangement is not mapped'}
+                            .{' '}
+                            <span
+                                style={{ cursor: 'pointer', textDecoration: 'underline' }}
+                                onClick={() => navigate('/settings')}
+                            >
+                                Fix mapping
+                            </span>
                         </div>
                     )}
 
@@ -250,24 +277,70 @@ function DashboardPage() {
                                 <div className="summary-stat">
                                     <span
                                         className="summary-value"
-                                        style={{ color: lastResult.skipped_unmapped ? 'var(--warning)' : undefined }}
+                                        style={{
+                                            color:
+                                                skippedTotal === 0
+                                                    ? undefined
+                                                    : lastResult.skipped_invalid
+                                                        ? 'var(--error)'
+                                                        : 'var(--warning)'
+                                        }}
                                     >
-                                        {lastResult.skipped_unmapped ?? 0}
+                                        {skippedTotal}
                                     </span>
-                                    <span className="summary-label">skipped</span>
+                                    <span className="summary-label">not imported</span>
                                 </div>
                             </div>
                             <p className="field-hint">
                                 {lastResult.date_from} → {lastResult.date_to}
                                 {lastResult.finished_at ? ` · finished ${lastResult.finished_at.replace('T', ' ')}` : ''}
+                                {typeof lastResult.active_arrangements === 'number'
+                                    ? ` · ${lastResult.active_arrangements} bank arrangement(s) with activity`
+                                    : ''}
+                                {typeof lastResult.actual_accounts_known === 'number'
+                                    ? ` · ${lastResult.actual_accounts_known} Actual account(s) known`
+                                    : ''}
                             </p>
+
+                            {/* Mapped to an Actual account that does not exist. Actual's import
+                                accepts an unknown account id and files the rows where nothing
+                                can display them, so the sync refuses these instead. */}
+                            {lastResult.skipped_invalid > 0 && (
+                                <div className="alert alert-error" style={{ marginTop: '0.75rem' }}>
+                                    <strong>{lastResult.skipped_invalid} transaction(s) not imported:</strong>{' '}
+                                    mapped to an Actual account that does not exist. Importing them
+                                    would have created rows no account can display.
+                                    <div className="skip-list">
+                                        {Object.entries(lastResult.invalid_targets || {}).map(([arr, v]) => (
+                                            <div key={arr} className="skip-entry">
+                                                <span className="input-mono" title={arr}>{shortId(arr)}</span>
+                                                <span>→</span>
+                                                <span className="input-mono" title={v.account}>{shortId(v.account)}</span>
+                                                <span style={{ color: 'var(--text-muted)' }}>{v.transactions} txns</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <span
+                                        style={{ cursor: 'pointer', textDecoration: 'underline' }}
+                                        onClick={() => navigate('/settings')}
+                                    >
+                                        Fix mapping
+                                    </span>
+                                </div>
+                            )}
+
                             {lastResult.skipped_unmapped > 0 && (
                                 <div className="alert alert-warning" style={{ marginTop: '0.75rem' }}>
-                                    {lastResult.skipped_unmapped} transaction(s) skipped because their
-                                    arrangement is not mapped:{' '}
-                                    {Object.entries(lastResult.unmapped_arrangements || {}).map(
-                                        ([id, n]) => `${n}× ${id}`
-                                    ).join(', ')}{' '}
+                                    <strong>{lastResult.skipped_unmapped} transaction(s) not imported:</strong>{' '}
+                                    their bank arrangement has no mapping yet.
+                                    <div className="skip-list">
+                                        {Object.entries(lastResult.unmapped_arrangements || {}).map(([id, n]) => (
+                                            <div key={id} className="skip-entry">
+                                                <span className="input-mono" title={id}>{shortId(id)}</span>
+                                                <span style={{ color: 'var(--text-muted)' }}>{n} txns</span>
+                                            </div>
+                                        ))}
+                                    </div>
                                     <span
                                         style={{ cursor: 'pointer', textDecoration: 'underline' }}
                                         onClick={() => navigate('/settings')}
@@ -275,6 +348,15 @@ function DashboardPage() {
                                         Add mapping
                                     </span>
                                 </div>
+                            )}
+
+                            {/* Mapped, but the bank returned nothing for it in this window. */}
+                            {skippedTotal === 0 && (lastResult.idle_arrangements || []).length > 0 && (
+                                <p className="field-hint" style={{ marginTop: '0.5rem' }}>
+                                    {(lastResult.idle_arrangements || []).length} mapped arrangement(s)
+                                    returned no transactions in this window:{' '}
+                                    {lastResult.idle_arrangements.map(shortId).join(', ')}
+                                </p>
                             )}
                             {Object.keys(lastResult.accounts || {}).length > 0 && (
                                 <div className="summary-accounts">
