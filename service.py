@@ -3,6 +3,7 @@ import json
 import logging
 import datetime
 from enum import Enum
+from functools import partial
 from typing import Optional
 from playwright.async_api import async_playwright, Playwright, Page, Browser, BrowserContext, expect
 from modules import convert, actual
@@ -189,7 +190,7 @@ class BankingService:
              # Wait longer (2 mins)
              await expect(self._page.locator(".user-context-menu-info__container__name")).to_be_attached(timeout=120000)
 
-        self._set_status(AppStatus.LOGGING_IN)
+        self._set_status(AppStatus.FETCHING_DATA)
         logger.info("Logged in successfully!")
     async def _process_fetch(self):
         self._set_status(AppStatus.FETCHING_DATA)
@@ -266,13 +267,7 @@ class BankingService:
             logger.error(f"Fetch flow failed: {e}")
             self._last_error = str(e)
             self._set_status(AppStatus.ERROR)
-            raise e
-
-        except Exception as e:
-            logger.error(f"Fetch flow failed: {e}")
-            self._last_error = str(e)
-            self._set_status(AppStatus.ERROR)
-            raise e
+            raise
 
     async def _process_save(self, data_str: str):
          self._set_status(AppStatus.SAVING_DATA)
@@ -307,37 +302,46 @@ class BankingService:
 
          logger.info(f"Converting {len(transactions_list)} transactions...")
          
-         # Make sure convert module uses the mapping passed in config
-         # We need to temporarily patch or pass mapping to convert function
-         # For now, let's assume convert module is modified or we do it here.
-         # Actually, better to modify convert module to accept mapping.
-         # But for speed, let's modify convert module in a separate step or monkeypatch for now?
-         # No, cleaner to pass mapping.
-         
-         # Assuming convert_module.convert_to_actual_import accepts (data, mapping)
-         # If not, let's update it in next step. For now, calling with expected signature correction.
-         converted = convert.convert_to_actual_import(transactions_list, self._config.get("accounts_mapping", {}))
-         
+         converted = convert.convert_to_transactions(transactions_list, self._config.get("accounts_mapping", {}))
+
+         if not converted:
+             logger.warning("Nothing to import: no transactions matched the account mapping")
+             self._set_status(AppStatus.SUCCESS)
+             return
+
          logger.info("Fetching Actual's token...")
          loop = asyncio.get_event_loop()
-         
-         # Custom init_actual that uses our config
+
          actual_config = {
              "url": self._config["actual_url"],
              "password": self._config["actual_password"],
              "budget_id": self._config["actual_budget_id"],
              "budget_password": self._config.get("actual_budget_password")
          }
-         
-         actual_token = await loop.run_in_executor(None, lambda: actual.init_actual(actual_config))
-         
-         if not actual_token:
-             raise Exception("Failed to get Actual Budget token")
 
-         logger.info("Importing data to Actual...")
+         actual_token = await loop.run_in_executor(None, lambda: actual.init_actual(actual_config))
+
+         logger.info(f"Importing data to Actual for {len(converted)} account(s)...")
+         # partial() binds the loop variables by value. A bare lambda captures them
+         # by reference and can import every account's transactions into whichever
+         # account the loop happened to finish on.
          for account, transactions in converted.items():
-            await loop.run_in_executor(None, lambda: actual.import_transactions(actual_token, account, transactions, actual_config["url"]))
-         
+             result = await loop.run_in_executor(
+                 None,
+                 partial(
+                     actual.import_transactions,
+                     actual_token,
+                     account,
+                     transactions,
+                     actual_config["url"],
+                 ),
+             )
+             added = len(result.get("added", [])) if isinstance(result, dict) else 0
+             updated = len(result.get("updated", [])) if isinstance(result, dict) else 0
+             logger.info(
+                 f"  account {account}: {len(transactions)} sent, {added} added, {updated} updated"
+             )
+
          self._set_status(AppStatus.SUCCESS)
 
 banking_service = BankingService()

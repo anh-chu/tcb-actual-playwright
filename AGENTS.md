@@ -16,14 +16,11 @@ High-impact files (most imported, changes here affect many other files):
 - /exchange_rate.py (imported by 1 files)
 
 Required environment variables (no defaults):
-- ACTUAL_BUDGET_ID (modules/config.py)
-- ACTUAL_BUDGET_PASSWORD (modules/config.py)
-- ACTUAL_PASSWORD (modules/config.py)
-- ACTUAL_URL (modules/config.py)
-- SECRET_KEY (auth.py)
-- TCB_ACCOUNTS_MAPPING (modules/config.py)
-- TCB_PASSWORD (modules/config.py)
-- TCB_USERNAME (modules/config.py)
+- SECRET_KEY (auth.py) - JWT signing + Fernet encryption key for DB credentials
+
+All other credentials (TCB username/password, Actual URL, password, budget id,
+budget password, account mappings) are configured from the Settings UI and stored
+encrypted in the SQLite database.
 
 Read .codesight/wiki/index.md for orientation (WHERE things live). Then read actual source files before implementing. Wiki articles are navigation aids, not implementation guides.
 Read .codesight/CODESIGHT.md for the complete AI context map including all routes, schema, components, libraries, config, middleware, and dependency graph.

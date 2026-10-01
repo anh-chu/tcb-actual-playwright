@@ -16,7 +16,7 @@ class SettingsSchema(BaseModel):
     actual_password: str
     actual_budget_id: str
     actual_budget_password: Optional[str] = None
-    accounts_mapping: str = "{}"
+    accounts_mapping: str = "[]"
 
 @router.get("/", response_model=SettingsSchema)
 def get_settings(current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
@@ -30,7 +30,7 @@ def get_settings(current_user: User = Depends(get_current_user), session: Sessio
             "actual_password": "",
             "actual_budget_id": "",
             "actual_budget_password": "",
-            "accounts_mapping": "{}"
+            "accounts_mapping": "[]"
         }
     
     # Decrypt

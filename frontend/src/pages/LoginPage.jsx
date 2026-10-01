@@ -26,58 +26,70 @@ export default function LoginPage() {
     };
 
     return (
-        <div className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '80vh' }}>
-            <div className="glass-card" style={{ width: '100%', maxWidth: '400px', margin: '2rem' }}>
-                <h2 style={{ textAlign: 'center', marginBottom: '3rem', fontSize: '2.4rem' }}>
-                    {isRegister ? 'Join Actual Sync' : 'Welcome Back'}
-                </h2>
+        <div style={{
+            minHeight: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1.5rem'
+        }}>
+            <div style={{ width: '100%', maxWidth: '340px' }}>
+                <div style={{ marginBottom: '1.75rem' }}>
+                    <h1 style={{ fontSize: '1.1rem' }}>
+                        {isRegister ? 'Create account' : 'Sign in'}
+                    </h1>
+                    <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                        TCB → Actual sync
+                    </p>
+                </div>
 
                 {error && (
-                    <div className="status-badge status-error" style={{ width: '100%', marginBottom: '1.5rem', justifyContent: 'center', borderRadius: '12px' }}>
+                    <div className="alert alert-error" style={{ marginBottom: '1rem' }}>
                         {error}
                     </div>
                 )}
+
                 <form onSubmit={handleSubmit}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginBottom: '2rem' }}>
-                        <div className="form-group" style={{ marginBottom: '0' }}>
-                            <label style={{ marginBottom: '0.75rem', fontSize: '0.95rem', fontWeight: '600', color: 'var(--text-muted)' }}>Username</label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1rem' }}>
+                        <div className="form-field">
+                            <label className="field-label">Username</label>
                             <input
-                                type="text"
                                 className="input-modern"
+                                type="text"
                                 value={username}
                                 onChange={e => setUsername(e.target.value)}
-                                placeholder="Enter your username"
+                                placeholder="username"
                                 required
                             />
                         </div>
-                        <div className="form-group" style={{ marginBottom: '0' }}>
-                            <label style={{ marginBottom: '0.75rem', fontSize: '0.95rem', fontWeight: '600', color: 'var(--text-muted)' }}>Password</label>
+                        <div className="form-field">
+                            <label className="field-label">Password</label>
                             <input
-                                type="password"
                                 className="input-modern"
+                                type="password"
                                 value={password}
                                 onChange={e => setPassword(e.target.value)}
-                                placeholder="Enter your password"
+                                placeholder="password"
                                 required
                             />
                         </div>
                     </div>
 
-                    <button type="submit" style={{ width: '100%', padding: '1.1rem', fontSize: '1.1rem' }}>
-                        {isRegister ? 'Create Account' : 'Sign In'}
+                    <button type="submit" style={{ width: '100%', height: '38px' }}>
+                        {isRegister ? 'Create account' : 'Sign in'}
                     </button>
                 </form>
 
-                <div style={{ marginTop: '2rem', textAlign: 'center' }}>
+                <p style={{ marginTop: '1.25rem', textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                     <span
-                        style={{ cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-muted)', transition: 'color 0.2s' }}
+                        style={{ cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'transparent' }}
+                        onMouseOver={e => e.target.style.textDecorationColor = 'var(--text-muted)'}
+                        onMouseOut={e => e.target.style.textDecorationColor = 'transparent'}
                         onClick={() => { setError(''); setIsRegister(!isRegister); }}
-                        onMouseOver={e => e.target.style.color = 'var(--text-main)'}
-                        onMouseOut={e => e.target.style.color = 'var(--text-muted)'}
                     >
-                        {isRegister ? 'Already have an account? Login' : 'Need an account? Create one'}
+                        {isRegister ? 'Already have an account? Sign in' : "Don't have an account? Create one"}
                     </span>
-                </div>
+                </p>
             </div>
         </div>
     );

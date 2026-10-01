@@ -13,6 +13,7 @@ from database import create_db_and_tables, get_session
 from models import User, Settings
 from routers import auth, settings
 from auth import get_current_user, decrypt_value
+from modules import actual
 
 app = FastAPI(title="Techcombank Sync")
 
@@ -34,6 +35,29 @@ class StatusResponse(BaseModel):
     status: AppStatus
     last_error: str
     logs: list[str]
+
+@app.get("/api/actual/accounts")
+def list_actual_accounts(
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """Provide the account picker in Settings with the budget's accounts."""
+    settings_db = session.exec(select(Settings).where(Settings.user_id == current_user.id)).first()
+    if not settings_db or not settings_db.actual_password_enc:
+        raise HTTPException(status_code=400, detail="Actual credentials are not configured yet.")
+
+    config = {
+        "url": settings_db.actual_url,
+        "password": decrypt_value(settings_db.actual_password_enc),
+        "budget_id": settings_db.actual_budget_id,
+        "budget_password": decrypt_value(settings_db.actual_budget_password_enc) if settings_db.actual_budget_password_enc else None,
+    }
+    try:
+        token = actual.init_actual(config)
+        return {"accounts": actual.list_accounts(token, config["url"])}
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
 
 @app.get("/api/status", response_model=StatusResponse)
 def get_status(current_user: User = Depends(get_current_user)):
