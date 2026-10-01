@@ -7,6 +7,7 @@ from pydantic import BaseModel
 import asyncio
 import os
 import json
+from typing import Optional
 
 from service import banking_service, AppStatus
 from database import create_db_and_tables, get_session
@@ -35,6 +36,7 @@ class StatusResponse(BaseModel):
     status: AppStatus
     last_error: str
     logs: list[str]
+    last_result: Optional[dict] = None
 
 @app.get("/api/actual/accounts")
 def list_actual_accounts(
@@ -64,7 +66,8 @@ def get_status(current_user: User = Depends(get_current_user)):
     return StatusResponse(
         status=banking_service.status,
         last_error=banking_service.last_error,
-        logs=banking_service.logs
+        logs=banking_service.logs,
+        last_result=banking_service.last_result
     )
 
 @app.post("/api/sync/start")

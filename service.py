@@ -45,6 +45,7 @@ class BankingService:
         self._page = None
         self._latest_screenshot: Optional[bytes] = None
         self._logs = deque(maxlen=50)
+        self._last_result: Optional[dict] = None
         
         # Attach handler
         self._log_handler = ListHandler(self._logs)
@@ -62,6 +63,10 @@ class BankingService:
     def last_error(self) -> str:
         return self._last_error
 
+    @property
+    def last_result(self) -> Optional[dict]:
+        return self._last_result
+
     def get_latest_screenshot(self) -> Optional[bytes]:
         return self._latest_screenshot
 
@@ -70,6 +75,10 @@ class BankingService:
             raise Exception("Sync already in progress")
         self._running = True
         self._config = config
+        # A stale error from the previous run would otherwise sit on the dashboard
+        # forever, even after a later sync succeeds.
+        self._last_error = ""
+        self._last_result = None
         # Store the task so we can cancel it
         self._sync_task = asyncio.create_task(self._run_process())
 
@@ -302,7 +311,13 @@ class BankingService:
 
          logger.info(f"Converting {len(transactions_list)} transactions...")
          
-         converted = convert.convert_to_transactions(transactions_list, self._config.get("accounts_mapping", {}))
+         mapping = self._config.get("accounts_mapping", {})
+         orphaned = convert.unmapped_arrangements(transactions_list, mapping)
+         if orphaned:
+             detail = ", ".join(f"{a} ({n} txns)" for a, n in orphaned.items())
+             logger.warning(f"Skipped {sum(orphaned.values())} transaction(s) from unmapped arrangement(s): {detail}")
+
+         converted = convert.convert_to_transactions(transactions_list, mapping)
 
          if not converted:
              logger.warning("Nothing to import: no transactions matched the account mapping")
@@ -321,6 +336,17 @@ class BankingService:
 
          actual_token = await loop.run_in_executor(None, lambda: actual.init_actual(actual_config))
 
+         summary = {
+             "date_from": self._config.get("date_from"),
+             "date_to": self._config.get("date_to"),
+             "transactions_fetched": len(transactions_list),
+             "skipped_unmapped": sum(orphaned.values()),
+             "unmapped_arrangements": orphaned,
+             "accounts": {},
+             "total_added": 0,
+             "total_updated": 0,
+         }
+
          logger.info(f"Importing data to Actual for {len(converted)} account(s)...")
          # partial() binds the loop variables by value. A bare lambda captures them
          # by reference and can import every account's transactions into whichever
@@ -338,10 +364,22 @@ class BankingService:
              )
              added = len(result.get("added", [])) if isinstance(result, dict) else 0
              updated = len(result.get("updated", [])) if isinstance(result, dict) else 0
+             summary["accounts"][account] = {
+                 "sent": len(transactions),
+                 "added": added,
+                 "updated": updated,
+             }
+             summary["total_added"] += added
+             summary["total_updated"] += updated
              logger.info(
                  f"  account {account}: {len(transactions)} sent, {added} added, {updated} updated"
              )
 
+         summary["finished_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+         self._last_result = summary
+         logger.info(
+             f"Done: {summary['total_added']} added, {summary['total_updated']} updated"
+        )
          self._set_status(AppStatus.SUCCESS)
 
 banking_service = BankingService()

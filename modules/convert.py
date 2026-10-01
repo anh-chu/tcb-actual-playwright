@@ -55,6 +55,20 @@ def convert_transaction(transaction: Dict, mapping: Dict):
     return out
 
 
+def unmapped_arrangements(transactions: List[Dict], mapping: Dict) -> Dict[str, int]:
+    """Count transactions whose arrangementId is missing from the mapping.
+
+    convert_transaction() silently drops these, so without this the only symptom
+    of a new card or account is transactions quietly not appearing in the budget.
+    """
+    counts: Dict[str, int] = {}
+    for t in transactions:
+        arrangement = t.get("arrangementId")
+        if arrangement and arrangement not in mapping:
+            counts[arrangement] = counts.get(arrangement, 0) + 1
+    return counts
+
+
 def convert_to_transactions(transactions: List[Dict], mapping: Dict):
     converted = list(
         filter(lambda x: x, [convert_transaction(t, mapping) for t in transactions])
