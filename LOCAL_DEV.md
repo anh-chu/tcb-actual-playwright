@@ -111,6 +111,10 @@ Create a `.env` file in the project root:
 SECRET_KEY=your-secret-key-here-min-32-chars
 
 # Database will be created at data/database.db automatically
+
+# Optional: override where the persistent browser profile lives (cookies are
+# reused between runs; defaults to data/browser_profile next to the database)
+#TCB_BROWSER_PROFILE=/custom/path
 ```
 
 ## Accessing the Application

@@ -2,12 +2,36 @@ import asyncio
 import json
 import logging
 import datetime
+import os
+import time
 from enum import Enum
 from functools import partial
+from pathlib import Path
 from typing import Optional
-from playwright.async_api import async_playwright, Playwright, Page, Browser, BrowserContext, expect
+from playwright.async_api import async_playwright
 from modules import convert, actual
 from modules.logger import logger
+
+TCB_DASHBOARD_URL = "https://onlinebanking.techcombank.com.vn/dashboard"
+TCB_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0"
+
+# The browser runs with a persistent Chromium profile stored inside the data/
+# volume (same convention as the database). Cookies survive between runs, so a run
+# that lands while TCB's cookies are still valid skips the cold login, which is
+# what triggers the phone approval. TCB's cookies are short-lived (minutes), so
+# this mostly saves a second approval right after a failed run; the fallback is
+# the normal credential login. Override with TCB_BROWSER_PROFILE if needed.
+BROWSER_PROFILE_DIR = os.environ.get(
+    "TCB_BROWSER_PROFILE",
+    str(Path(__file__).resolve().parent / "data" / "browser_profile"),
+)
+# Chromium refuses to launch on a profile whose singleton lock looks held; a run
+# that was killed (redeploy, container restart, OOM) leaves these behind.
+_BROWSER_SINGLETON_FILES = ("SingletonLock", "SingletonSocket", "SingletonCookie")
+# storageState dump: captures ALL cookies including session cookies, which Chromium
+# itself drops when the browser closes. Written after every run, re-injected before
+# the next navigation so a still-valid TCB session survives between runs.
+BROWSER_STATE_FILE = str(Path(BROWSER_PROFILE_DIR).parent / "browser_state.json")
 
 class AppStatus(str, Enum):
     IDLE = "idle"
@@ -98,36 +122,105 @@ class BankingService:
         self._status = status
         logger.info(f"Status changed to: {status}")
 
+    def _prepare_browser_profile(self):
+        profile = Path(BROWSER_PROFILE_DIR)
+        profile.mkdir(parents=True, exist_ok=True)
+        # A run that was killed (redeploy, container restart, OOM) leaves Chromium's
+        # singleton files behind; a stale lock makes the next launch refuse to start.
+        for name in _BROWSER_SINGLETON_FILES:
+            try:
+                (profile / name).unlink()
+            except FileNotFoundError:
+                pass
+        logger.info(f"Using browser profile at {BROWSER_PROFILE_DIR}")
+
+    async def _restore_cookies_from_state(self):
+        """Re-inject the cookies saved by the previous run.
+
+        Chromium's profile keeps only non-session cookies; key session cookies
+        (Keycloak SSO) are dropped when the browser closes. storageState() captured
+        them anyway, so put them back before the first navigation. Stale cookies
+        are ignored naturally: the session probe detects the sign-in form then.
+        """
+        state_file = Path(BROWSER_STATE_FILE)
+        if not state_file.is_file():
+            return
+        try:
+            state = json.loads(state_file.read_text())
+        except Exception as e:
+            logger.warning(f"Could not read the stored cookie state: {e}")
+            return
+        added = 0
+        for cookie in state.get("cookies") or []:
+            try:
+                await self._context.add_cookies([cookie])
+                added += 1
+            except Exception:
+                pass  # skip anything malformed rather than lose the whole batch
+        if added:
+            logger.info(f"Restored {added} saved cookie(s) from the previous run")
+
+    async def _save_cookies_state(self):
+        """Persist the whole cookie jar, including session cookies Chromium drops."""
+        state = await self._context.storage_state()
+        path = Path(BROWSER_STATE_FILE)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state))
+        os.chmod(tmp, 0o600)
+        tmp.replace(path)
+
     async def _run_process(self):
         screenshot_task = None
         try:
             self._set_status(AppStatus.STARTING)
             async with async_playwright() as self._playwright:
-                self._browser = await self._playwright.chromium.launch(
-                    headless=True,
-                    args=[
-                        "--no-sandbox",
-                        "--disable-dev-shm-usage",
-                        "--disable-gpu",
-                        "--window-size=1920,1080",
-                    ],
-                )
-                
-                self._context = await self._browser.new_context(
-                    viewport={"width": 1920, "height": 1080},
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0",
-                )
-                
-                self._page = await self._context.new_page()
-                
-                # Start background screenshot task
-                screenshot_task = asyncio.create_task(self._screenshot_loop())
+                try:
+                    self._prepare_browser_profile()
+                    self._context = await self._playwright.chromium.launch_persistent_context(
+                        BROWSER_PROFILE_DIR,
+                        headless=True,
+                        viewport={"width": 1920, "height": 1080},
+                        user_agent=TCB_USER_AGENT,
+                        args=[
+                            "--no-sandbox",
+                            "--disable-dev-shm-usage",
+                            "--disable-gpu",
+                            "--window-size=1920,1080",
+                        ],
+                    )
+                    # A persistent context owns the whole browser process; closing the
+                    # context below is enough, self._browser stays None.
+                    self._browser = None
+                    self._page = self._context.pages[0] if self._context.pages else await self._context.new_page()
 
-                if self._running:
-                    await self._process_login()
-                
-                if self._running:
-                    await self._process_fetch()
+                    # Put back the cookies saved by the previous run (including the
+                    # session cookies Chromium itself would have dropped).
+                    await self._restore_cookies_from_state()
+
+                    # Start background screenshot task
+                    screenshot_task = asyncio.create_task(self._screenshot_loop())
+
+                    if self._running:
+                        await self._process_login()
+
+                    if self._running:
+                        await self._process_fetch()
+                finally:
+                    # Persist the cookie jar, then close the browser while playwright
+                    # is still running so the profile is flushed to disk cleanly.
+                    if self._context:
+                        try:
+                            await asyncio.wait_for(self._save_cookies_state(), timeout=5)
+                        except Exception:
+                            pass
+                        try:
+                            await asyncio.wait_for(self._context.close(), timeout=10)
+                        except Exception:
+                            pass
+                    self._context = None
+                    self._page = None
+                    self._browser = None
 
         except asyncio.CancelledError:
             logger.info("Sync process cancelled")
@@ -155,14 +248,7 @@ class BankingService:
                     await screenshot_task
                 except asyncio.CancelledError:
                     pass
-                
-            if self._context:
-                try: await self._context.close()
-                except: pass
-            if self._browser:
-                try: await self._browser.close()
-                except: pass
-            
+
             if self._status != AppStatus.ERROR and self._status != AppStatus.SUCCESS:
                  self._set_status(AppStatus.IDLE)
 
@@ -179,52 +265,172 @@ class BankingService:
     async def _process_login(self):
         self._set_status(AppStatus.LOGGING_IN)
         logger.info("Navigating to dashboard...")
-        await self._page.goto("https://onlinebanking.techcombank.com.vn/dashboard")
-        
-        await expect(self._page.locator("#username")).to_be_visible()
+        await self._page.goto(TCB_DASHBOARD_URL)
+
+        if await self._resume_session_if_valid():
+            logger.info("Existing TCB session reused from the browser profile")
+        else:
+            await self._login_with_credentials()
+
+        self._set_status(AppStatus.FETCHING_DATA)
+        logger.info("Logged in successfully!")
+
+    async def _resume_session_if_valid(self) -> bool:
+        """Return True when the persisted profile still yields an authenticated session.
+
+        After /dashboard loads, the app either bounces to the Keycloak sign-in form
+        (stored cookies no longer work: cold) or silently (re)mints an OIDC session
+        from the stored Keycloak cookies (warm). Whichever signal settles first
+        decides; a stale sessionStorage token from an earlier run does not count.
+        """
+        probe = """() => {
+            if (document.querySelector('#username')) return 'cold';
+            try {
+                const token = sessionStorage.getItem('access_token');
+                if (token) {
+                    let exp = sessionStorage.getItem('expires_at');
+                    exp = exp === null ? null : Number(exp);
+                    if (exp !== null && !isNaN(exp) && exp < 1e11) exp = exp * 1000;  // seconds -> ms
+                    const fresh = exp === null || isNaN(exp) ? true : exp > Date.now();
+                    if (fresh) return 'warm';
+                }
+            } catch (e) {}
+            return '';
+        }"""
+        deadline = time.monotonic() + 30.0
+        while time.monotonic() < deadline:
+            try:
+                verdict = await self._page.evaluate(probe)
+            except Exception:
+                verdict = ""  # navigation in flight; re-check on the next pass
+            if verdict == "cold":
+                logger.info("Keycloak sign-in form detected; stored cookies are no longer valid")
+                return False
+            if verdict == "warm":
+                logger.info("Stored cookies still mint a session; skipping login")
+                return True
+            await asyncio.sleep(0.5)
+        logger.info("No existing session could be confirmed; falling back to a full login")
+        return False
+
+    async def _login_with_credentials(self):
+        try:
+            await self._page.locator("#username").wait_for(state="visible", timeout=15000)
+        except Exception:
+            raise Exception(
+                "No reusable session, and the sign-in form never appeared; cannot log in"
+            )
+
+        logger.info("Signing in with the stored credentials")
         await self._page.locator("#username").fill(self._config["tcb_username"])
         await self._page.locator("#password").click()
         await self._page.locator("#password").fill(self._config["tcb_password"])
         await self._page.locator("#kc-login").click()
 
-        logger.info("Waiting for login completion (OTP or dashboard load)")
-        
-        # We try to wait for successful login
-        try:
-             # Wait short time (5s)
-             await expect(self._page.locator(".user-context-menu-info__container__name")).to_be_attached(timeout=5000)
-        except:
-             # If timed out, we likely need OTP
-             self._set_status(AppStatus.WAITING_OTP)
-             # Wait longer (2 mins)
-             await expect(self._page.locator(".user-context-menu-info__container__name")).to_be_attached(timeout=120000)
+        # TCB pushes an approval request to the registered phone; it expires
+        # server-side in about 2 minutes. Surface the waiting_otp status for the
+        # long wait, like before.
+        logger.info("Waiting for login completion (phone approval may be required)")
+        outcome = await self._wait_for_login_outcome(5000)
+        if outcome is None:
+            self._set_status(AppStatus.WAITING_OTP)
+            outcome = await self._wait_for_login_outcome(120000)
+        if outcome is None:
+            raise Exception(
+                "Timed out waiting for the login to complete (phone approval not done in time?)"
+            )
+        if outcome != "ok":
+            raise Exception(f"Keycloak rejected the login: {outcome}")
 
-        self._set_status(AppStatus.FETCHING_DATA)
-        logger.info("Logged in successfully!")
+    async def _wait_for_login_outcome(self, timeout_ms: int) -> Optional[str]:
+        """Watch the post-login page.
+
+        Returns 'ok' once the SPA holds a live token, the error text when Keycloak
+        shows a visible error, or None when nothing settled within the timeout.
+        """
+        probe = """() => {
+            if (location.pathname.indexOf('/auth/realms') === -1) {
+                try {
+                    const token = sessionStorage.getItem('access_token');
+                    if (token) {
+                        let exp = sessionStorage.getItem('expires_at');
+                        exp = exp === null ? null : Number(exp);
+                        if (exp !== null && !isNaN(exp) && exp < 1e11) exp = exp * 1000;  // seconds -> ms
+                        const fresh = exp === null || isNaN(exp) ? true : exp > Date.now();
+                        if (fresh) return 'ok';
+                    }
+                } catch (e) {}
+                if (document.querySelector('.user-context-menu-info__container__name')) return 'ok';
+            }
+            const err = document.querySelector('#kc-error-message, #input-error');
+            if (err && err.offsetParent !== null) {
+                const text = (err.textContent || '').trim().replace(/\\s+/g, ' ');
+                if (text) return 'error: ' + text.slice(0, 300);
+            }
+            return '';
+        }"""
+        deadline = time.monotonic() + timeout_ms / 1000
+        while time.monotonic() < deadline:
+            try:
+                verdict = await self._page.evaluate(probe)
+            except Exception:
+                verdict = ""
+            if verdict == "ok":
+                return verdict
+            if verdict.startswith("error:"):
+                return verdict[len("error:"):].strip()
+            await asyncio.sleep(0.75)
+        return None
+
+    async def _resolve_bearer_token(self) -> Optional[str]:
+        """Resolve a bearer token for the TCB APIs.
+
+        Prefer the SPA's sessionStorage token: it is minted (or refreshed) on every
+        boot, so it is the freshest value on a reused session. Fall back to the
+        Authorization cookie, which is the path this app has always used.
+        """
+        probe = "() => { try { return sessionStorage.getItem('access_token') || ''; } catch (e) { return ''; } }"
+        spa_deadline = time.monotonic() + 3.0
+        hard_deadline = time.monotonic() + 15.0
+        cookie_token = None
+        while time.monotonic() < hard_deadline:
+            try:
+                token = await self._page.evaluate(probe)
+            except Exception:
+                token = ""
+            if token:
+                return token
+            cookie_token = await self._authorization_cookie()
+            if cookie_token and time.monotonic() >= spa_deadline:
+                return cookie_token
+            await asyncio.sleep(0.5)
+        return cookie_token
+
+    async def _authorization_cookie(self) -> Optional[str]:
+        for cookie in await self._context.cookies():
+            if cookie["name"] == "Authorization" and cookie["domain"] == "onlinebanking.techcombank.com.vn":
+                return cookie["value"]
+        return None
+
     async def _process_fetch(self):
         self._set_status(AppStatus.FETCHING_DATA)
         logger.info("Fetching data...")
         
         try:
-            # Extract Authorization token from cookies
-            cookies = await self._context.cookies()
-            auth_cookie = None
-            for cookie in cookies:
-                if cookie['name'] == 'Authorization' and cookie['domain'] == 'onlinebanking.techcombank.com.vn':
-                    auth_cookie = cookie['value']
-                    break
-            
-            if not auth_cookie:
-                raise Exception("Could not find Authorization cookie")
-            
+            token = await self._resolve_bearer_token()
+            if not token:
+                raise Exception(
+                    "No usable TCB token found (neither the SPA session token nor the Authorization cookie)"
+                )
+
             logger.info("Found authorization token")
 
             headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0",
+                "User-Agent": TCB_USER_AGENT,
                 "Accept": "application/json",
                 "Accept-Language": "en-US,en;q=0.7,vi;q=0.3",
                 "Referer": "https://onlinebanking.techcombank.com.vn/",
-                "Authorization": f"Bearer {auth_cookie}",
+                "Authorization": f"Bearer {token}",
             }
 
             # Refresh transaction history on TCB side before reading.
