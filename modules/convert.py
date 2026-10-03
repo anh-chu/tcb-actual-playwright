@@ -1,4 +1,5 @@
 import json
+import re
 from pprint import pprint
 from typing import Dict, List
 
@@ -7,6 +8,16 @@ from itertools import groupby
 from operator import itemgetter
 
 from .exchange_rate import get_exchange_rate
+
+# For foreign-currency card purchases TCB writes the amount it actually settled in VND
+# into the description, e.g. "... Twitch Interactive, Inc. So tien sau khi quy doi: 205958 VND".
+_SETTLED_VND = re.compile(r"quy doi:\s*(\d+)\s*VND", re.IGNORECASE)
+
+
+def settled_vnd(description):
+    """Return the VND amount the bank settled for a foreign-currency row, or None."""
+    m = _SETTLED_VND.search(description or "")
+    return int(m.group(1)) if m else None
 
 
 def convert_transaction(transaction: Dict, mapping: Dict):
@@ -40,8 +51,14 @@ def convert_transaction(transaction: Dict, mapping: Dict):
     }
 
     if currency != "VND":
-        exchange_rate = get_exchange_rate(currency)
-        out["amount"] = round(amount * exchange_rate * 100)
+        # Prefer the bank's own settled VND; fall back to our rate lookup when the
+        # description does not carry one (e.g. refunds/reverts).
+        settled = settled_vnd(transaction.get("description"))
+        if settled is not None:
+            out["amount"] = settled * 100
+        else:
+            exchange_rate = get_exchange_rate(currency)
+            out["amount"] = round(amount * exchange_rate * 100)
 
     out["amount"] = (
         -out["amount"]
