@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Optional
 from playwright.async_api import async_playwright
 from modules import convert, actual
+from modules.audit import Audit, rows
+from urllib.parse import quote
 from modules.logger import logger
 
 TCB_DASHBOARD_URL = "https://onlinebanking.techcombank.com.vn/dashboard"
@@ -172,7 +174,9 @@ class BankingService:
 
     async def _run_process(self):
         screenshot_task = None
+        self._audit = None
         try:
+            self._audit = Audit(os.environ.get("TCB_AUDIT_DIR", str(Path(__file__).resolve().parent / "data" / "audit")))
             self._set_status(AppStatus.STARTING)
             async with async_playwright() as self._playwright:
                 try:
@@ -241,6 +245,12 @@ class BankingService:
                 self._last_error = err_msg
                 self._set_status(AppStatus.ERROR)
         finally:
+            if self._audit and self._audit.state["status"] not in ("success", "no_matching_transactions"):
+                try:
+                    self._audit.update(status="cancelled" if not self._running else "failed",
+                                       failure_stage=self._status.value)
+                except OSError:
+                    logger.error("Could not persist audit failure status; inspect latest attempt timestamp")
             self._running = False
             if screenshot_task:
                 screenshot_task.cancel()
@@ -417,6 +427,8 @@ class BankingService:
         logger.info("Fetching data...")
         
         try:
+            assert self._audit is not None
+            assert self._page is not None
             token = await self._resolve_bearer_token()
             if not token:
                 raise Exception(
@@ -445,6 +457,8 @@ class BankingService:
                     data=json.dumps({"externalArrangementIds": arrangement_ids}),
                 )
                 if refresh_resp.status >= 400:
+                    if refresh_resp.status in (401, 403):
+                        raise Exception(f"TCB authentication rejected: {refresh_resp.status}")
                     logger.warning(f"Refresh returned status {refresh_resp.status}, continuing anyway")
                 else:
                     logger.info("Refresh accepted")
@@ -465,18 +479,38 @@ class BankingService:
                 date_to = today
                 logger.info(f"Using default date range (last 30 days): {date_from} to {date_to}")
             
-            # Make API call to get transactions
-            url = f"https://onlinebanking.techcombank.com.vn/api/transaction-manager/client-api/v2/transactions?bookingDateGreaterThan={date_from}&bookingDateLessThan={date_to}&from=0&size=500&orderBy=bookingDate&direction=DESC"
-
-            response = await self._page.request.get(url=url, headers=headers)
-            
-            if response.status != 200:
-                raise Exception(f"API returned status {response.status}")
-            
-            body = await response.text()
-            logger.info(f"Got {len(body)} bytes of transaction data from {date_from} to {date_to}")
-            
-            await self._process_save(body)
+            # Capture bank-reported balances, never derive them from feed totals.
+            balances = []
+            for arrangement_id in arrangement_ids:
+                balance_url = ("https://onlinebanking.techcombank.com.vn/api/arrangement-manager/client-api/v2/arrangements/"
+                               + quote(arrangement_id, safe="") + "?maskIndicator=false&isPullLatestBalance=true")
+                response = await self._page.request.get(url=balance_url, headers=headers)
+                if response.status != 200:
+                    raise Exception(f"TCB balance API returned status {response.status}")
+                balances.append({"arrangement_id": arrangement_id,
+                                 "actual_account_id": self._config["accounts_mapping"][arrangement_id],
+                                 "observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                                 "bank_response": json.loads(await response.text())})
+            transactions = []
+            previous_page = None
+            offset = 0
+            while True:
+                url = f"https://onlinebanking.techcombank.com.vn/api/transaction-manager/client-api/v2/transactions?bookingDateGreaterThan={date_from}&bookingDateLessThan={date_to}&from={offset}&size=500&orderBy=bookingDate&direction=DESC"
+                response = await self._page.request.get(url=url, headers=headers)
+                if response.status != 200:
+                    raise Exception(f"TCB transaction API returned status {response.status}")
+                page_body = json.loads(await response.text())
+                self._audit.record(f"transactions-page-{offset}.json", page_body)
+                page_rows = rows(page_body)
+                if offset and page_rows and page_rows == previous_page:
+                    raise Exception("TCB pagination repeated a page; refusing incomplete import")
+                transactions.extend(page_rows)
+                if len(page_rows) < 500:
+                    break
+                previous_page = page_rows
+                offset += 500
+            self._audit.bank_snapshot(balances, transactions, date_from, date_to)
+            await self._process_save(json.dumps(transactions))
 
         except Exception as e:
             logger.error(f"Fetch flow failed: {e}")
@@ -485,6 +519,7 @@ class BankingService:
             raise
 
     async def _process_save(self, data_str: str):
+         assert self._audit is not None
          self._set_status(AppStatus.SAVING_DATA)
          data_json = json.loads(data_str)
          
@@ -524,9 +559,13 @@ class BankingService:
              logger.warning(f"Skipped {sum(orphaned.values())} transaction(s) from unmapped arrangement(s): {detail}")
 
          converted = convert.convert_to_transactions(transactions_list, mapping)
+         # Persist the exact outbound payload before opening an Actual session.
+         self._audit.record("actual-payload.json", converted)
+         self._audit.update(status="pre_actual_saved")
 
          if not converted:
              logger.warning("Nothing to import: no transactions matched the account mapping")
+             self._audit.update(status="no_matching_transactions", actual_import_completed=False)
              self._set_status(AppStatus.SUCCESS)
              return
 
@@ -577,11 +616,14 @@ class BankingService:
              }
              summary["total_added"] += added
              summary["total_updated"] += updated
+             self._audit.record("actual-result-partial.json", summary)
              logger.info(
                  f"  account {account}: {len(transactions)} sent, {added} added, {updated} updated"
              )
 
          summary["finished_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+         self._audit.record("actual-result.json", summary)
+         self._audit.update(status="success", actual_import_completed=True)
          self._last_result = summary
          logger.info(
              f"Done: {summary['total_added']} added, {summary['total_updated']} updated"
